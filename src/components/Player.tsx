@@ -49,6 +49,8 @@ function PlaybackControls({ large = false }: { large?: boolean }) {
 export function PlayerDock() {
   const track = usePlaybackStore((state) => state.currentTrack);
   const status = usePlaybackStore((state) => state.status);
+  const position = usePlaybackStore((state) => state.position);
+  const duration = usePlaybackStore((state) => state.duration);
   const error = usePlaybackStore((state) => state.error);
   const volume = usePlaybackStore((state) => state.volume);
   const muted = usePlaybackStore((state) => state.muted);
@@ -83,6 +85,10 @@ export function PlayerDock() {
       <IconButton icon="queue" label="Queue" onClick={() => openSheet('queue')} />
       <IconButton icon={muted ? 'mute' : 'volume'} label={muted ? 'Unmute' : 'Mute'} onClick={toggleMute} />
       <input className="volume-slider" type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => setVolume(Number(event.target.value))} aria-label="Volume" />
+    </div>
+    <div className="mini-progress-wrap" aria-label="Track progress">
+      <div className="mini-progress-rail" aria-hidden="true"><span style={{ width: `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%` }} /></div>
+      <input className="mini-progress-seek" type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} onChange={(event) => { usePlaybackStore.getState().seek(Number(event.target.value)); useRoomStore.getState().broadcastPlayback('seek'); }} aria-label="Seek in track" aria-valuetext={`${formatDuration(position)} of ${formatDuration(duration)}`} />
     </div>
     {status === 'error' && <div className="dock-error" role="alert"><span>{error}</span><button onClick={retry}>Retry</button></div>}
   </aside>;
