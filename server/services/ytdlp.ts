@@ -4,8 +4,10 @@ import path from 'node:path';
 import { platform, tmpdir } from 'node:os';
 import { z } from 'zod';
 import type { AudioFormat, YtDlpStatus } from '../types.js';
+import { TaskQueue } from './taskQueue.js';
 
-const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
+const MAX_OUTPUT_BYTES = 1024 * 1024;
+const extractionQueue = new TaskQueue(1);
 const EXTRACTION_TIMEOUT_MS = 60_000;
 const STATUS_TTL_MS = 60_000;
 const AUDIO_CACHE_TTL_MS = 3 * 60_000;
@@ -60,6 +62,7 @@ function run(command: string, args: readonly string[], timeout: number): Promise
       maxBuffer: MAX_OUTPUT_BYTES,
       windowsHide: true,
       shell: false,
+      env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=96' },
     }, (error, stdout, stderr) => {
       if (error) {
         Object.assign(error, { stdout, stderr });
@@ -163,13 +166,11 @@ export class YtDlpService implements AudioExtractor {
   async getAudioFormat(id: string, refresh = false): Promise<AudioFormat> {
     const cached = this.formats.get(id);
     if (!refresh && cached && cached.expiresAt > Date.now()) return cached.format;
-    if (!refresh) {
-      const existing = this.inFlight.get(id);
-      if (existing) return existing;
-    }
+    const existing = this.inFlight.get(id);
+    if (existing) return existing;
 
     if (refresh) this.formats.delete(id);
-    const operation = this.extract(id).finally(() => {
+    const operation = extractionQueue.run(() => this.extract(id)).finally(() => {
       if (this.inFlight.get(id) === operation) this.inFlight.delete(id);
     });
     this.inFlight.set(id, operation);
@@ -246,6 +247,11 @@ export class YtDlpService implements AudioExtractor {
       contentLength: result.data.filesize ?? result.data.filesize_approx,
       httpHeaders: safeHeaders(result.data.http_headers),
     };
+    for (const [key, entry] of this.formats) if (entry.expiresAt <= Date.now()) this.formats.delete(key);
+    if (this.formats.size >= 100) {
+      const oldest = this.formats.keys().next().value;
+      if (oldest) this.formats.delete(oldest);
+    }
     this.formats.set(id, { format, expiresAt: cacheExpiry(format.url) });
     return format;
   }

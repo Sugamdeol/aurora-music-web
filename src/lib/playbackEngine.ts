@@ -5,17 +5,28 @@ import { api, streamCandidates } from './api';
 import { useLibraryStore } from '../store/library';
 import { usePlaybackStore } from '../store/playback';
 import { EqualizerGraph } from './equalizer';
+import { useRoomStore } from '../room/client';
+import { mixGains, transitionDuration } from './songTransitions';
 
 type StoreState = ReturnType<typeof usePlaybackStore.getState>;
 
-class PlaybackEngine {
-  readonly audio = new Audio();
+export class PlaybackEngine {
+  private activeAudio = new Audio();
+  get audio(): HTMLAudioElement { return this.activeAudio; }
   private unsubscribe?: () => void;
   private libraryUnsubscribe?: () => void;
   private currentKey = '';
   private loadRevision = 0;
   private audioContext?: AudioContext;
-  private sourceNode?: MediaElementAudioSourceNode;
+  private sourceNode?: GainNode;
+  private deckNodes = new WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>();
+  private roomUnsubscribe?: () => void;
+  private prepared?: { audio: HTMLAudioElement; track: MediaTrack; index: number; candidates: string[]; sourceIndex: number; objectUrl?: string };
+  private preparationKey = '';
+  private preparationRevision = 0;
+  private startingMix = false;
+  private fading?: { audio: HTMLAudioElement; objectUrl?: string; start: number; duration: number; outgoingGain: number; incomingGain: number };
+  private fadeTimer?: number;
   private compressor?: DynamicsCompressorNode;
   private equalizer?: EqualizerGraph;
   private graphMode = '';
@@ -40,7 +51,15 @@ class PlaybackEngine {
     if (!this.eventsBound) { this.bindEvents(); this.eventsBound = true; }
     this.unsubscribe = usePlaybackStore.subscribe((state, previous) => this.applyState(state, previous));
     this.libraryUnsubscribe = useLibraryStore.subscribe((state, previous) => {
-      if (state.playbackSettings !== previous.playbackSettings) this.configureNormalizer(state.playbackSettings.normalizeVolume);
+      if (state.playbackSettings !== previous.playbackSettings) {
+        this.configureNormalizer(state.playbackSettings.normalizeVolume);
+        this.cancelFade();
+        void this.prepareNext();
+      }
+    });
+    this.roomUnsubscribe = useRoomStore.subscribe(() => {
+      if (useRoomStore.getState().status === 'connected') this.cancelFade();
+      void this.prepareNext();
     });
     this.configureNormalizer(useLibraryStore.getState().playbackSettings.normalizeVolume);
     this.applyState(usePlaybackStore.getState(), usePlaybackStore.getState());
@@ -48,17 +67,18 @@ class PlaybackEngine {
     return () => this.stop();
   }
 
-  private bindEvents(): void {
+  private bindEvents(audio = this.audio): void {
     const store = usePlaybackStore.getState;
-    this.audio.addEventListener('loadedmetadata', () => {
+    const on = (name: string, handler: () => void) => audio.addEventListener(name, () => { if (audio === this.audio) handler(); });
+    on('loadedmetadata', () => {
       const duration = Number.isFinite(this.audio.duration) ? this.audio.duration : store().currentTrack?.durationSeconds ?? 0;
       store().setDuration(duration);
       store().setStatus(this.audio.paused ? 'ready' : 'playing');
     });
-    this.audio.addEventListener('durationchange', () => {
+    on('durationchange', () => {
       if (Number.isFinite(this.audio.duration)) store().setDuration(this.audio.duration);
     });
-    this.audio.addEventListener('timeupdate', () => {
+    on('timeupdate', () => {
       const position = this.audio.currentTime || 0;
       store().setPosition(position);
       const previous = this.lastListenPosition;
@@ -67,10 +87,11 @@ class PlaybackEngine {
         if (this.pendingListenSeconds >= 10) this.flushListenTime();
       }
       this.lastListenPosition = position;
+      void this.maybeTransition();
     });
-    this.audio.addEventListener('waiting', () => { this.flushListenTime(); this.lastListenPosition = undefined; store().setStatus('loading'); });
-    this.audio.addEventListener('canplay', () => store().setStatus(this.audio.paused ? 'ready' : 'playing'));
-    this.audio.addEventListener('playing', () => {
+    on('waiting', () => { this.cancelFade(); this.flushListenTime(); this.lastListenPosition = undefined; store().setStatus('loading'); });
+    on('canplay', () => store().setStatus(this.audio.paused ? 'ready' : 'playing'));
+    on('playing', () => {
       store().setStatus('playing');
       const track = store().currentTrack;
       if (track && this.handledTrackId !== track.id) {
@@ -85,12 +106,12 @@ class PlaybackEngine {
       }
       this.updatePositionState();
     });
-    this.audio.addEventListener('pause', () => {
+    on('pause', () => {
       this.flushListenTime();
       if (!this.audio.ended && store().status !== 'error') store().setStatus('paused');
     });
-    this.audio.addEventListener('ended', () => { this.flushListenTime(); void this.handleEnded(); });
-    this.audio.addEventListener('error', () => void this.handleSourceError());
+    on('ended', () => { this.cancelFade(); this.flushListenTime(); void this.handleEnded(); });
+    on('error', () => { this.cancelFade(); void this.handleSourceError(); });
   }
 
   private flushListenTime(): void {
@@ -103,11 +124,15 @@ class PlaybackEngine {
 
   private async applyState(state: StoreState, previous: StoreState): Promise<void> {
     if (this.destroyed) return;
-    this.audio.volume = state.volume;
+    this.audio.volume = state.volume * (this.fading?.incomingGain ?? 1);
     this.audio.muted = state.muted;
     this.audio.playbackRate = state.playbackRate;
+    if (this.fading) { this.fading.audio.volume = state.volume * this.fading.outgoingGain; this.fading.audio.muted = state.muted; }
+    if (!state.isPlaying) this.cancelFade();
     const key = state.currentTrack ? `${state.currentTrack.id}:${state.sourceRevision}` : '';
     if (key !== this.currentKey) {
+      this.cancelFade();
+      this.clearPrepared();
       this.flushListenTime();
       this.currentKey = key;
       this.handledTrackId = undefined;
@@ -125,10 +150,12 @@ class PlaybackEngine {
       if (key !== this.currentKey) return;
     }
     const liveState = usePlaybackStore.getState();
+    void this.prepareNext();
     if (liveState.autoplayEligible && liveState.queue.length === 1 && liveState.currentTrack?.source !== 'local') {
       void this.seedSuggestions(liveState.currentTrack!, `${liveState.currentTrack!.id}:${liveState.sourceRevision}`);
     }
     if (Math.abs((this.audio.currentTime || 0) - liveState.position) > 1.25 && Number.isFinite(liveState.position)) {
+      this.cancelFade();
       try { this.audio.currentTime = liveState.position; this.lastListenPosition = liveState.position; } catch { /* metadata may not be ready yet */ }
     }
     if (liveState.isPlaying && this.audio.paused && this.audio.src) {
@@ -179,6 +206,148 @@ class PlaybackEngine {
       } catch { /* error and autoplay events provide actionable state */ }
     }
     if (revision === this.loadRevision) this.updateMediaSession(track);
+  }
+
+  private connectDeck(audio: HTMLAudioElement): void {
+    if (!this.audioContext || !this.sourceNode) return;
+    let node = this.deckNodes.get(audio);
+    if (!node) {
+      node = this.audioContext.createMediaElementSource(audio);
+      this.deckNodes.set(audio, node);
+      node.connect(this.sourceNode);
+    }
+  }
+
+  private releaseDeck(audio: HTMLAudioElement, objectUrl?: string): void {
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+    this.deckNodes.get(audio)?.disconnect();
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  }
+
+  private clearPrepared(): void {
+    this.preparationRevision += 1;
+    this.preparationKey = '';
+    if (this.prepared) this.releaseDeck(this.prepared.audio, this.prepared.objectUrl);
+    this.prepared = undefined;
+  }
+
+  private async prepareNext(): Promise<void> {
+    if (this.fading) return;
+    const state = usePlaybackStore.getState();
+    const settings = useLibraryStore.getState().playbackSettings;
+    if (!state.currentTrack || settings.transitionMode === 'off' || state.repeat === 'one' || useRoomStore.getState().status === 'connected' || state.queue.length < 2) {
+      if (this.preparationKey || this.prepared) this.clearPrepared();
+      return;
+    }
+    if (!this.prepared && (!state.isPlaying || !state.duration || (state.duration - state.position) / state.playbackRate > 45)) return;
+    const nextKey = state.shuffle ? state.queue.length : state.queue[state.currentIndex + 1]?.id ?? (state.repeat === 'all' ? state.queue[0]?.id : 'end');
+    const key = `${this.currentKey}:${state.currentIndex}:${nextKey}:${state.shuffle}:${state.repeat}:${settings.transitionMode}:${settings.preferredQuality}:${Math.round(state.duration)}`;
+    if (key === this.preparationKey) return;
+    this.clearPrepared();
+    this.preparationKey = key;
+    const revision = this.preparationRevision;
+    let index = state.currentIndex + 1;
+    if (state.shuffle) {
+      const choices = state.queue.map((_, i) => i).filter(i => i !== state.currentIndex);
+      index = choices[Math.floor(Math.random() * choices.length)];
+    } else if (index >= state.queue.length && state.repeat === 'all') index = 0;
+    const track = state.queue[index];
+    if (!track || !transitionDuration(settings, state.currentTrack, track, this.audio.duration || state.duration)) return;
+    const audio = new Audio();
+    audio.preload = 'auto';
+    audio.crossOrigin = 'anonymous';
+    audio.volume = 0;
+    audio.muted = state.muted;
+    audio.playbackRate = state.playbackRate;
+    let objectUrl: string | undefined;
+    let candidates: string[];
+    if (track.source === 'local') {
+      const record = await db.files.get(track.fileId || track.id);
+      if (revision !== this.preparationRevision || !record?.blob) return;
+      objectUrl = URL.createObjectURL(record.blob);
+      candidates = [objectUrl];
+    } else candidates = streamCandidates(track, settings.preferredQuality);
+    if (revision !== this.preparationRevision) { if (objectUrl) URL.revokeObjectURL(objectUrl); return; }
+    const prepared = { audio, track, index, candidates, sourceIndex: 0, objectUrl };
+    this.prepared = prepared;
+    this.bindEvents(audio);
+    this.connectDeck(audio);
+    audio.addEventListener('error', () => {
+      if (this.prepared !== prepared) return;
+      if (prepared.sourceIndex + 1 < candidates.length) {
+        audio.src = candidates[++prepared.sourceIndex];
+        audio.load();
+      } else { this.prepared = undefined; this.releaseDeck(audio, objectUrl); }
+    });
+    audio.src = candidates[0] || '';
+    audio.load();
+  }
+
+  private async maybeTransition(): Promise<void> {
+    const state = usePlaybackStore.getState();
+    const prepared = this.prepared;
+    if (!prepared || this.startingMix || this.fading || !state.isPlaying || this.audio.paused || this.audio.seeking || state.repeat === 'one' || useRoomStore.getState().status === 'connected' || !state.currentTrack) return;
+    const seconds = transitionDuration(useLibraryStore.getState().playbackSettings, state.currentTrack, prepared.track, this.audio.duration);
+    const remaining = (this.audio.duration - this.audio.currentTime) / this.audio.playbackRate;
+    if (!seconds || remaining > seconds || remaining < .2 || prepared.audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) return;
+    const outgoing = this.audio;
+    const key = this.currentKey;
+    this.startingMix = true;
+    try {
+      prepared.audio.playbackRate = state.playbackRate;
+      if (this.audioContext?.state === 'suspended') await this.audioContext.resume();
+      await prepared.audio.play();
+      if (this.prepared !== prepared || key !== this.currentKey || !usePlaybackStore.getState().isPlaying || useRoomStore.getState().status === 'connected') {
+        prepared.audio.pause();
+        return;
+      }
+      this.flushListenTime();
+      const outgoingUrl = this.objectUrl;
+      this.prepared = undefined;
+      this.preparationKey = '';
+      this.preparationRevision += 1;
+      this.activeAudio = prepared.audio;
+      this.objectUrl = prepared.objectUrl;
+      this.sourceCandidates = prepared.candidates;
+      this.sourceIndex = prepared.sourceIndex;
+      this.handledTrackId = undefined;
+      this.historyRecordId = undefined;
+      this.pendingListenSeconds = 0;
+      this.lastListenPosition = undefined;
+      this.fading = { audio: outgoing, objectUrl: outgoingUrl, start: this.audio.currentTime, duration: Math.min(seconds, remaining) * state.playbackRate, outgoingGain: 1, incomingGain: 0 };
+      const latest = usePlaybackStore.getState();
+      this.currentKey = `${prepared.track.id}:${latest.sourceRevision + 1}`;
+      latest.playTracks(latest.queue, prepared.index, latest.contextLabel);
+      latest.setDuration(this.audio.duration);
+      latest.setPosition(this.audio.currentTime);
+      this.audio.dispatchEvent(new Event('playing'));
+      this.fadeTimer = window.setInterval(() => {
+        const fade = this.fading;
+        if (!fade) return;
+        const progress = (this.audio.currentTime - fade.start) / fade.duration;
+        const [outgoingGain, incomingGain] = mixGains(progress);
+        fade.outgoingGain = outgoingGain;
+        fade.incomingGain = incomingGain;
+        const playback = usePlaybackStore.getState();
+        fade.audio.volume = playback.volume * outgoingGain;
+        this.audio.volume = playback.volume * incomingGain;
+        if (progress >= 1 || fade.audio.ended) this.cancelFade();
+      }, 50);
+    } catch {
+      if (this.prepared === prepared) { this.prepared = undefined; this.releaseDeck(prepared.audio, prepared.objectUrl); }
+      // An unready or blocked next stream falls back to ordinary playback.
+    } finally { this.startingMix = false; }
+  }
+
+  private cancelFade(): void {
+    window.clearInterval(this.fadeTimer);
+    this.fadeTimer = undefined;
+    const fade = this.fading;
+    this.fading = undefined;
+    if (fade) this.releaseDeck(fade.audio, fade.objectUrl);
+    this.audio.volume = usePlaybackStore.getState().volume;
   }
 
   private async handleEnded(): Promise<void> {
@@ -242,7 +411,8 @@ class PlaybackEngine {
     if (!('AudioContext' in window)) return;
     try {
       this.audioContext ??= new AudioContext();
-      this.sourceNode ??= this.audioContext.createMediaElementSource(this.audio);
+      this.sourceNode ??= this.audioContext.createGain();
+      this.connectDeck(this.audio);
       this.compressor ??= this.audioContext.createDynamicsCompressor();
       this.compressor.threshold.value = -20;
       this.compressor.knee.value = 18;
@@ -300,6 +470,9 @@ class PlaybackEngine {
   }
 
   stop(): void {
+    this.cancelFade();
+    this.clearPrepared();
+    this.roomUnsubscribe?.();
     this.unsubscribe?.();
     this.libraryUnsubscribe?.();
     this.unsubscribe = undefined;

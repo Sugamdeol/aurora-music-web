@@ -78,17 +78,20 @@ export function PlayerDock() {
       <Artwork src={track.artwork} title={track.title} />
       <span><strong>{track.title}</strong><small>{track.artist}</small></span>
     </button>
-    <PlaybackControls />
+    <div className="dock-transport">
+      <PlaybackControls />
+      <div className="dock-timeline">
+        <span>{formatDuration(position)}</span>
+        <input className="dock-seek" type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} disabled={!duration} onChange={(event) => { usePlaybackStore.getState().seek(Number(event.target.value)); useRoomStore.getState().broadcastPlayback('seek'); }} aria-label="Seek in track" aria-valuetext={`${formatDuration(position)} of ${formatDuration(duration)}`} style={{ '--progress': `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%` } as React.CSSProperties} />
+        <span>{formatDuration(duration)}</span>
+      </div>
+    </div>
     <div className="dock-actions">
       <IconButton icon="heart" label={liked ? 'Remove from liked songs' : 'Add to liked songs'} active={liked} onClick={() => void useLibraryStore.getState().toggleLike(track)} />
       <IconButton icon="lyrics" label="Open lyrics in player" onClick={() => openFull(true)} />
       <IconButton icon="queue" label="Queue" onClick={() => openSheet('queue')} />
       <IconButton icon={muted ? 'mute' : 'volume'} label={muted ? 'Unmute' : 'Mute'} onClick={toggleMute} />
       <input className="volume-slider" type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => setVolume(Number(event.target.value))} aria-label="Volume" />
-    </div>
-    <div className="mini-progress-wrap" aria-label="Track progress">
-      <div className="mini-progress-rail" aria-hidden="true"><span style={{ width: `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%` }} /></div>
-      <input className="mini-progress-seek" type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} onChange={(event) => { usePlaybackStore.getState().seek(Number(event.target.value)); useRoomStore.getState().broadcastPlayback('seek'); }} aria-label="Seek in track" aria-valuetext={`${formatDuration(position)} of ${formatDuration(duration)}`} />
     </div>
     {status === 'error' && <div className="dock-error" role="alert"><span>{error}</span><button onClick={retry}>Retry</button></div>}
   </aside>;

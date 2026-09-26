@@ -119,6 +119,8 @@ export interface AppearanceSettings {
 }
 
 export interface PlaybackSettings {
+  transitionMode: 'off' | 'crossfade' | 'automix';
+  crossfadeSeconds: number;
   equalizerEnabled: boolean;
   equalizerGains: number[];
   autoplay: boolean;
@@ -145,6 +147,8 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
 };
 
 export const DEFAULT_PLAYBACK_SETTINGS: PlaybackSettings = {
+  transitionMode: 'automix',
+  crossfadeSeconds: 6,
   equalizerEnabled: false,
   equalizerGains: [0, 0, 0, 0, 0],
   autoplay: true,

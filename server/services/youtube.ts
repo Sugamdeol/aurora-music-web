@@ -1,5 +1,7 @@
 import process from 'node:process';
 import type { Innertube } from 'youtubei.js';
+import { TaskQueue } from './taskQueue.js';
+const catalogQueue = new TaskQueue(2, 16);
 
 export interface MusicProvider {
   getHome(): Promise<unknown>;
@@ -36,7 +38,7 @@ export class YouTubeMusicService implements MusicProvider {
 
   private client(): Promise<Innertube> {
     this.clientPromise ??= loadYouTubeModule()
-      .then(({ Innertube: Client, UniversalCache }) => Client.create({ cache: new UniversalCache(false) }))
+      .then(({ Innertube: Client, UniversalCache }) => Client.create({ cache: new UniversalCache(false), retrieve_player: false, enable_session_cache: false }))
       .catch((error: unknown) => {
         this.clientPromise = undefined;
         throw error;
@@ -45,38 +47,38 @@ export class YouTubeMusicService implements MusicProvider {
   }
 
   async getHome(): Promise<unknown> {
-    return (await this.client()).music.getHomeFeed();
+    return catalogQueue.run(async () => (await this.client()).music.getHomeFeed());
   }
 
   async search(query: string, type: 'song' | 'video' | 'artist' | 'album' | 'playlist'): Promise<unknown> {
-    return (await this.client()).music.search(query, { type });
+    return catalogQueue.run(async () => (await this.client()).music.search(query, { type }));
   }
 
   async getSuggestions(query: string): Promise<unknown> {
-    return (await this.client()).music.getSearchSuggestions(query);
+    return catalogQueue.run(async () => (await this.client()).music.getSearchSuggestions(query));
   }
 
   async getArtist(id: string): Promise<unknown> {
-    return (await this.client()).music.getArtist(id);
+    return catalogQueue.run(async () => (await this.client()).music.getArtist(id));
   }
 
   async getAlbum(id: string): Promise<unknown> {
-    return (await this.client()).music.getAlbum(id);
+    return catalogQueue.run(async () => (await this.client()).music.getAlbum(id));
   }
 
   async getPlaylist(id: string): Promise<unknown> {
-    return (await this.client()).music.getPlaylist(id);
+    return catalogQueue.run(async () => (await this.client()).music.getPlaylist(id));
   }
 
   async getRelated(id: string): Promise<unknown> {
-    return (await this.client()).music.getRelated(id);
+    return catalogQueue.run(async () => (await this.client()).music.getRelated(id));
   }
 
   async getLyrics(id: string): Promise<unknown> {
-    return (await this.client()).music.getLyrics(id);
+    return catalogQueue.run(async () => (await this.client()).music.getLyrics(id));
   }
 
   async getExplore(): Promise<unknown> {
-    return (await this.client()).music.getExplore();
+    return catalogQueue.run(async () => (await this.client()).music.getExplore());
   }
 }

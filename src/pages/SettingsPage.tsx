@@ -40,6 +40,7 @@ export function SettingsPage() {
   const addToPlaylist = useLibraryStore((state) => state.addToPlaylist);
   const recordPlay = useLibraryStore((state) => state.recordPlay);
   const roomUsername = useRoomStore((state) => state.username);
+  const roomStatus = useRoomStore((state) => state.status);
   const setRoomPreferences = useRoomStore((state) => state.setPreferences);
   const [profileName, setProfileName] = useState(roomUsername || 'Listener');
   const [storage, setStorage] = useState<{ usage: number; quota: number }>();
@@ -115,6 +116,9 @@ export function SettingsPage() {
     </SettingsGroup>
 
     <SettingsGroup title="Playback">
+      <label className="setting-block"><div><strong>Song transitions</strong><small>{playback.transitionMode === 'automix' ? 'Adaptive blends between songs. Consecutive album tracks stay intact.' : playback.transitionMode === 'crossfade' ? 'Fade the next song in as the current song fades out.' : 'Play each song from beginning to end.'}</small></div><select aria-label="Song transitions" value={playback.transitionMode} onChange={(event) => void updatePlayback({ transitionMode: event.target.value as PlaybackSettings['transitionMode'] })}><option value="off">Off</option><option value="crossfade">Crossfade</option><option value="automix">Auto Mix</option></select></label>
+      {playback.transitionMode === 'crossfade' && <label className="setting-block"><div><strong>Crossfade duration</strong><small>{playback.crossfadeSeconds} seconds</small></div><input aria-label="Crossfade duration" type="range" min="1" max="12" step="1" value={playback.crossfadeSeconds} onChange={(event) => void updatePlayback({ crossfadeSeconds: Number(event.target.value) })} /></label>}
+      {roomStatus === 'connected' && <p className="transition-note">Song transitions pause while listening together to keep everyone in sync.</p>}
       <SettingToggle title="Continue with similar music" description="Load related tracks when a queue reaches the end" checked={playback.autoplay} onChange={(autoplay) => void updatePlayback({ autoplay })} />
       <SettingToggle title="Normalize volume" description="Reduce large volume changes between tracks when supported" checked={playback.normalizeVolume} onChange={(normalizeVolume) => void updatePlayback({ normalizeVolume })} />
       <label className="setting-block"><div><strong>Streaming quality</strong><small>Higher quality can use more data</small></div><select value={playback.preferredQuality} onChange={(event) => void updatePlayback({ preferredQuality: event.target.value as typeof playback.preferredQuality })}><option value="auto">Automatic</option><option value="high">High</option><option value="data-saver">Data saver</option></select></label>
