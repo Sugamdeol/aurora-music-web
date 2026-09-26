@@ -5,6 +5,7 @@ import App from './App';
 import './styles.css';
 import './refinements.css';
 import './android-features.css';
+import './player-polish.css';
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -13,28 +13,21 @@ import { EqualizerControls } from './EqualizerControls';
 import { TrackActions } from './TrackActions';
 import { lyricIndexAt } from '../lib/trackActions';
 
-function DockTime() {
-  const position = usePlaybackStore((state) => state.position);
-  const duration = usePlaybackStore((state) => state.duration);
-  return <span className="dock-time" aria-label={`${formatDuration(position)} of ${formatDuration(duration)}`}>{formatDuration(position)}<span> / {formatDuration(duration)}</span></span>;
-}
-
 function PlaybackSpeed() {
   const rate = usePlaybackStore((state) => state.playbackRate);
   const together = useRoomStore((state) => state.status === 'connected');
   return <label className="playback-speed" title={together ? 'Listening rooms use normal speed to stay in sync' : 'Change playback speed'}><span>Speed</span><select aria-label="Playback speed" disabled={together} value={rate} onChange={(event) => usePlaybackStore.getState().setPlaybackRate(Number(event.target.value))}>{[.5, .75, 1, 1.25, 1.5, 1.75, 2].map((speed) => <option key={speed} value={speed}>{speed}×</option>)}</select></label>;
 }
 
-function Progress({ large = false }: { large?: boolean }) {
+function Progress() {
   const position = usePlaybackStore((state) => state.position);
   const duration = usePlaybackStore((state) => state.duration);
   const seek = usePlaybackStore((state) => state.seek);
   const percent = duration > 0 ? Math.min(100, (position / duration) * 100) : 0;
-  return <div className={`progress-wrap ${large ? 'progress-large' : 'mini-progress-wrap'}`}>
-    {large && <span>{formatDuration(position)}</span>}
-    {!large && <div className="mini-progress-rail" aria-hidden="true"><span style={{ width: `${percent}%` }} /></div>}
-    <input className={!large ? 'mini-progress-seek' : undefined} type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} onChange={(event) => { seek(Number(event.target.value)); useRoomStore.getState().broadcastPlayback('seek'); }} aria-label="Track progress" style={{ '--progress': `${percent}%` } as React.CSSProperties} />
-    {large && <span>{formatDuration(duration)}</span>}
+  return <div className="progress-wrap progress-large">
+    <span>{formatDuration(position)}</span>
+    <input type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} onChange={(event) => { seek(Number(event.target.value)); useRoomStore.getState().broadcastPlayback('seek'); }} aria-label="Track progress" style={{ '--progress': `${percent}%` } as React.CSSProperties} />
+    <span>{formatDuration(duration)}</span>
   </div>;
 }
 
@@ -79,10 +72,9 @@ export function PlayerDock() {
     else if (dx > 55) usePlaybackStore.getState().previous();
   };
   return <aside className="player-dock glass-surface" aria-label="Now playing">
-    <Progress />
     <button className="dock-track" onClick={() => openFull(true)} onPointerDown={(event) => { pointerStart.current = { x: event.clientX, y: event.clientY }; }} onPointerUp={gestureEnd}>
       <Artwork src={track.artwork} title={track.title} />
-      <span><strong>{track.title}</strong><small>{track.artist}</small><DockTime /></span>
+      <span><strong>{track.title}</strong><small>{track.artist}</small></span>
     </button>
     <PlaybackControls />
     <div className="dock-actions">
@@ -282,7 +274,7 @@ function FullPlayer() {
       <section className="full-player-media" aria-label="Playback controls">
         <Artwork className="full-artwork" src={track.artwork} title={track.title} />
         <div className="full-track-copy"><div><h1>{track.title}</h1><p>{track.artist}{track.album ? <span>{track.album}</span> : null}</p></div><IconButton icon="heart" label={liked ? 'Unlike track' : 'Like track'} active={liked} onClick={() => void toggleLike(track)} /></div>
-        <Progress large />
+        <Progress />
         <PlaybackControls large />
         <div className="player-tools"><PlaybackSpeed /><div className="seek-buttons"><button onClick={() => { const player = usePlaybackStore.getState(); player.seek(player.position - 10); useRoomStore.getState().broadcastPlayback('seek'); }} aria-label="Rewind ten seconds">−10s</button><button onClick={() => { const player = usePlaybackStore.getState(); player.seek(player.position + 10); useRoomStore.getState().broadcastPlayback('seek'); }} aria-label="Forward ten seconds">+10s</button></div></div>
         <div className="full-player-actions">
