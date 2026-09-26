@@ -211,8 +211,6 @@ export class YtDlpService implements AudioExtractor {
         '1',
         '--extractor-retries',
         '1',
-        '--extractor-args',
-        'youtube:player_client=tv_embedded',
         '--js-runtimes',
         process.env.YT_DLP_JS_RUNTIME?.trim() || `node:${process.execPath}`,
         '--remote-components',
