@@ -1,0 +1,260 @@
+import { create } from 'zustand';
+import type { MediaTrack, PlaybackStatus, RepeatMode } from '../domain/media';
+import { getSetting, setSetting } from '../lib/db';
+
+export type PlayerSheet = 'queue' | 'sleep' | 'equalizer' | null;
+
+interface PersistedQueue {
+  tracks: MediaTrack[];
+  index: number;
+}
+
+interface PlaybackState {
+  ready: boolean;
+  queue: MediaTrack[];
+  currentIndex: number;
+  currentTrack: MediaTrack | null;
+  contextLabel: string;
+  autoplayEligible: boolean;
+  isPlaying: boolean;
+  status: PlaybackStatus;
+  error?: string;
+  position: number;
+  duration: number;
+  volume: number;
+  muted: boolean;
+  playbackRate: number;
+  shuffle: boolean;
+  repeat: RepeatMode;
+  fullPlayerOpen: boolean;
+  activeSheet: PlayerSheet;
+  sourceRevision: number;
+  bootstrap: () => Promise<void>;
+  playTracks: (tracks: MediaTrack[], startIndex?: number, contextLabel?: string) => void;
+  playTrack: (track: MediaTrack, context?: MediaTrack[], contextLabel?: string, exactIndex?: number) => void;
+  syncQueue: (tracks: MediaTrack[], currentTrackId?: string) => void;
+  togglePlayback: () => void;
+  play: () => void;
+  pause: () => void;
+  next: (automatic?: boolean) => void;
+  previous: () => void;
+  seek: (seconds: number) => void;
+  setPosition: (seconds: number) => void;
+  setDuration: (seconds: number) => void;
+  setStatus: (status: PlaybackStatus, error?: string) => void;
+  setVolume: (volume: number) => void;
+  toggleMute: () => void;
+  setPlaybackRate: (rate: number) => void;
+  toggleShuffle: () => void;
+  cycleRepeat: () => void;
+  addToQueue: (track: MediaTrack, next?: boolean) => void;
+  removeFromQueue: (index: number) => void;
+  reorderQueue: (from: number, to: number) => void;
+  clearQueue: () => void;
+  clearUpcoming: () => void;
+  retrySource: () => void;
+  openFullPlayer: (open?: boolean) => void;
+  openSheet: (sheet: PlayerSheet) => void;
+}
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+let saveTimer: number | undefined;
+function persist(state: Pick<PlaybackState, 'queue' | 'currentIndex' | 'volume' | 'shuffle' | 'repeat'>): void {
+  window.clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(() => {
+    void Promise.all([
+      setSetting('queue', { tracks: state.queue, index: state.currentIndex }),
+      setSetting('volume', state.volume),
+      setSetting('shuffle', state.shuffle),
+      setSetting('repeat', state.repeat),
+    ]);
+  }, 150);
+}
+
+function updateCurrent(queue: MediaTrack[], index: number): Pick<PlaybackState, 'queue' | 'currentIndex' | 'currentTrack'> {
+  const safeIndex = queue.length ? clamp(index, 0, queue.length - 1) : -1;
+  return { queue, currentIndex: safeIndex, currentTrack: safeIndex >= 0 ? queue[safeIndex] : null };
+}
+
+export const usePlaybackStore = create<PlaybackState>((set, get) => ({
+  ready: false,
+  queue: [],
+  currentIndex: -1,
+  currentTrack: null,
+  contextLabel: 'Aurora Music',
+  autoplayEligible: false,
+  isPlaying: false,
+  status: 'idle',
+  position: 0,
+  duration: 0,
+  volume: 0.82,
+  muted: false,
+  playbackRate: 1,
+  shuffle: false,
+  repeat: 'off',
+  fullPlayerOpen: false,
+  activeSheet: null,
+  sourceRevision: 0,
+
+  bootstrap: async () => {
+    const [savedQueue, volume, shuffle, repeat, playbackRate] = await Promise.all([
+      getSetting<PersistedQueue>('queue', { tracks: [], index: -1 }),
+      getSetting<number>('volume', 0.82),
+      getSetting<boolean>('shuffle', false),
+      getSetting<RepeatMode>('repeat', 'off'),
+      getSetting<number>('player.speed', 1),
+    ]);
+    const current = updateCurrent(savedQueue.tracks ?? [], savedQueue.index ?? -1);
+    set({ ...current, ready: true, volume: clamp(volume, 0, 1), shuffle, repeat: ['off', 'all', 'one'].includes(repeat) ? repeat : 'off', playbackRate: Number.isFinite(playbackRate) ? clamp(playbackRate, .5, 2) : 1 });
+  },
+
+  playTracks: (tracks, startIndex = 0, contextLabel = 'Queue') => {
+    if (!tracks.length) return;
+    const current = updateCurrent([...tracks], startIndex);
+    set({ ...current, contextLabel, autoplayEligible: false, isPlaying: true, status: 'loading', error: undefined, position: 0, duration: current.currentTrack?.durationSeconds ?? 0, sourceRevision: get().sourceRevision + 1 });
+    persist({ ...get(), ...current });
+  },
+
+  playTrack: (track, context = [], contextLabel = 'Single track', exactIndex) => {
+    const tracks = context.length ? [...context] : [track];
+    let index = exactIndex !== undefined && tracks[exactIndex]?.id === track.id ? exactIndex : tracks.findIndex((item) => item.id === track.id);
+    if (index < 0) { tracks.unshift(track); index = 0; }
+    get().playTracks(tracks, index, contextLabel);
+    set({ autoplayEligible: tracks.length === 1 });
+  },
+
+  syncQueue: (tracks, currentTrackId) => {
+    const state = get();
+    if (!tracks.length) { get().clearQueue(); return; }
+    const requestedId = currentTrackId || state.currentTrack?.id;
+    const index = Math.max(0, requestedId ? tracks.findIndex((track) => track.id === requestedId) : state.currentIndex);
+    const next = updateCurrent([...tracks], index);
+    const changedTrack = next.currentTrack?.id !== state.currentTrack?.id;
+    set({ ...next, autoplayEligible: false, position: changedTrack ? 0 : state.position, duration: changedTrack ? next.currentTrack?.durationSeconds ?? 0 : state.duration, sourceRevision: changedTrack ? state.sourceRevision + 1 : state.sourceRevision });
+    persist({ ...state, ...next });
+  },
+
+  togglePlayback: () => {
+    if (!get().currentTrack && get().queue.length) {
+      const current = updateCurrent(get().queue, 0);
+      set({ ...current, isPlaying: true, status: 'loading', sourceRevision: get().sourceRevision + 1 });
+      return;
+    }
+    if (!get().currentTrack) return;
+    if (get().status === 'error') { get().retrySource(); return; }
+    set((state) => ({ isPlaying: !state.isPlaying, status: state.isPlaying ? 'paused' : 'loading', error: undefined }));
+  },
+  play: () => {
+    if (!get().currentTrack) return;
+    if (get().status === 'error') { get().retrySource(); return; }
+    set({ isPlaying: true, status: 'loading', error: undefined });
+  },
+  pause: () => set({ isPlaying: false, status: 'paused' }),
+
+  next: (automatic = false) => {
+    const state = get();
+    if (!state.queue.length) return;
+    if (automatic && state.repeat === 'one') {
+      set({ position: 0, isPlaying: true, sourceRevision: state.sourceRevision + 1, status: 'loading' });
+      return;
+    }
+    let index: number;
+    if (state.shuffle && state.queue.length > 1) {
+      do { index = Math.floor(Math.random() * state.queue.length); } while (index === state.currentIndex);
+    } else {
+      index = state.currentIndex + 1;
+      if (index >= state.queue.length) {
+        if (state.repeat === 'all') index = 0;
+        else { set({ isPlaying: false, status: 'paused', position: state.duration }); return; }
+      }
+    }
+    const current = updateCurrent(state.queue, index);
+    set({ ...current, isPlaying: true, status: 'loading', error: undefined, position: 0, duration: current.currentTrack?.durationSeconds ?? 0, sourceRevision: state.sourceRevision + 1 });
+    persist({ ...state, ...current });
+  },
+
+  previous: () => {
+    const state = get();
+    if (state.position > 4) { set({ position: 0 }); return; }
+    if (!state.queue.length) return;
+    const index = state.currentIndex > 0 ? state.currentIndex - 1 : state.repeat === 'all' ? state.queue.length - 1 : 0;
+    const current = updateCurrent(state.queue, index);
+    set({ ...current, isPlaying: true, status: 'loading', position: 0, duration: current.currentTrack?.durationSeconds ?? 0, sourceRevision: state.sourceRevision + 1 });
+    persist({ ...state, ...current });
+  },
+
+  seek: (seconds) => {
+    if (!Number.isFinite(seconds)) return;
+    set({ position: clamp(seconds, 0, get().duration || Infinity) });
+  },
+  setPosition: (position) => set({ position }),
+  setDuration: (duration) => set({ duration: Number.isFinite(duration) ? duration : 0 }),
+  setStatus: (status, error) => set({ status, error }),
+  setVolume: (volume) => { set({ volume: clamp(volume, 0, 1), muted: false }); persist(get()); },
+  toggleMute: () => set((state) => ({ muted: !state.muted })),
+  setPlaybackRate: (rate) => {
+    if (!Number.isFinite(rate)) return;
+    const playbackRate = clamp(rate, .5, 2);
+    set({ playbackRate });
+    void setSetting('player.speed', playbackRate);
+  },
+  toggleShuffle: () => { set((state) => ({ shuffle: !state.shuffle })); persist(get()); },
+  cycleRepeat: () => {
+    set((state) => ({ repeat: state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off' }));
+    persist(get());
+  },
+
+  addToQueue: (track, next = false) => {
+    const state = get();
+    const queue = [...state.queue];
+    const insertAt = next && state.currentIndex >= 0 ? state.currentIndex + 1 : queue.length;
+    queue.splice(insertAt, 0, track);
+    const current = updateCurrent(queue, state.currentIndex < 0 ? 0 : state.currentIndex);
+    set({ ...current, autoplayEligible: false });
+    persist({ ...state, ...current });
+  },
+
+  removeFromQueue: (index) => {
+    const state = get();
+    if (index < 0 || index >= state.queue.length) return;
+    const queue = state.queue.filter((_, itemIndex) => itemIndex !== index);
+    let currentIndex = state.currentIndex;
+    let revision = state.sourceRevision;
+    if (index < currentIndex) currentIndex -= 1;
+    else if (index === currentIndex) { currentIndex = Math.min(currentIndex, queue.length - 1); revision += 1; }
+    const current = updateCurrent(queue, currentIndex);
+    set({ ...current, autoplayEligible: false, sourceRevision: revision, isPlaying: queue.length ? state.isPlaying : false, status: queue.length ? state.status : 'idle' });
+    persist({ ...state, ...current });
+  },
+
+  reorderQueue: (from, to) => {
+    const state = get();
+    if (from === to || from < 0 || to < 0 || from >= state.queue.length || to >= state.queue.length) return;
+    const queue = [...state.queue];
+    const [moved] = queue.splice(from, 1);
+    queue.splice(to, 0, moved);
+    let currentIndex = state.currentIndex;
+    if (from === currentIndex) currentIndex = to;
+    else if (from < currentIndex && to >= currentIndex) currentIndex -= 1;
+    else if (from > currentIndex && to <= currentIndex) currentIndex += 1;
+    const current = updateCurrent(queue, currentIndex);
+    set(current);
+    persist({ ...state, ...current });
+  },
+
+  clearUpcoming: () => {
+    const state = get();
+    if (state.currentIndex < 0) return;
+    const queue = state.queue.slice(0, state.currentIndex + 1);
+    set({ queue, autoplayEligible: false });
+    persist({ ...state, queue });
+  },
+  clearQueue: () => {
+    const current = updateCurrent([], -1);
+    set({ ...current, autoplayEligible: false, isPlaying: false, status: 'idle', position: 0, duration: 0, fullPlayerOpen: false, activeSheet: null, sourceRevision: get().sourceRevision + 1 });
+    persist({ ...get(), ...current });
+  },
+  retrySource: () => set((state) => ({ sourceRevision: state.sourceRevision + 1, isPlaying: true, status: 'loading', error: undefined })),
+  openFullPlayer: (open) => set((state) => ({ fullPlayerOpen: open ?? !state.fullPlayerOpen, activeSheet: open === false ? null : state.activeSheet })),
+  openSheet: (activeSheet) => set({ activeSheet }),
+}));
