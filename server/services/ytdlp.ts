@@ -62,7 +62,9 @@ function run(command: string, args: readonly string[], timeout: number): Promise
       maxBuffer: MAX_OUTPUT_BYTES,
       windowsHide: true,
       shell: false,
-      env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=96' },
+      // YouTube's solver needs more than 96 MB even for a single audio track.
+      // Extraction stays serialized so this budget is used by one job at a time.
+      env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=160' },
     }, (error, stdout, stderr) => {
       if (error) {
         Object.assign(error, { stdout, stderr });
