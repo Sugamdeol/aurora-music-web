@@ -179,7 +179,7 @@ export class YtDlpService implements AudioExtractor {
 
   private async extract(id: string): Promise<AudioFormat> {
     const spec = commandSpec();
-    const watchUrl = `https://music.youtube.com/watch?v=${id}`;
+    const watchUrl = `https://www.youtube.com/watch?v=${id}`;
     const cookieFile = process.env.YT_DLP_COOKIE_FILE?.trim();
     let cookieTempDir: string | undefined;
     let cookieArgs: string[] = [];
@@ -201,7 +201,6 @@ export class YtDlpService implements AudioExtractor {
       ({ stdout } = await run(spec.command, [
         ...spec.prefix,
         ...cookieArgs,
-        '--no-warnings',
         '--no-playlist',
         '--skip-download',
         '--force-ipv4',
