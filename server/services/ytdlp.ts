@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
+import { chmod, copyFile, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { platform } from 'node:os';
+import { platform, tmpdir } from 'node:os';
 import { z } from 'zod';
 import type { AudioFormat, YtDlpStatus } from '../types.js';
 
@@ -179,32 +180,51 @@ export class YtDlpService implements AudioExtractor {
     const spec = commandSpec();
     const watchUrl = `https://music.youtube.com/watch?v=${id}`;
     const cookieFile = process.env.YT_DLP_COOKIE_FILE?.trim();
-    const cookieArgs = cookieFile ? ['--cookies', cookieFile] : [];
-    const { stdout } = await run(spec.command, [
-      ...spec.prefix,
-      ...cookieArgs,
-      '--no-warnings',
-      '--no-playlist',
-      '--skip-download',
-      '--force-ipv4',
-      '--socket-timeout',
-      '10',
-      '--retries',
-      '1',
-      '--extractor-retries',
-      '1',
-      '--extractor-args',
-      'youtube:player_client=tv_embedded',
-      '--js-runtimes',
-      process.env.YT_DLP_JS_RUNTIME?.trim() || `node:${process.execPath}`,
-      '--remote-components',
-      'ejs:github',
-      '--dump-single-json',
-      '--format',
-      'bestaudio[ext=m4a]/bestaudio',
-      '--',
-      watchUrl,
-    ], EXTRACTION_TIMEOUT_MS);
+    let cookieTempDir: string | undefined;
+    let cookieArgs: string[] = [];
+    if (cookieFile) {
+      cookieTempDir = await mkdtemp(path.join(tmpdir(), 'aurora-ytdlp-'));
+      const writableCookieFile = path.join(cookieTempDir, 'cookies.txt');
+      try {
+        await copyFile(cookieFile, writableCookieFile);
+        await chmod(writableCookieFile, 0o600);
+        cookieArgs = ['--cookies', writableCookieFile];
+      } catch (error) {
+        await rm(cookieTempDir, { recursive: true, force: true });
+        throw error;
+      }
+    }
+
+    let stdout: string;
+    try {
+      ({ stdout } = await run(spec.command, [
+        ...spec.prefix,
+        ...cookieArgs,
+        '--no-warnings',
+        '--no-playlist',
+        '--skip-download',
+        '--force-ipv4',
+        '--socket-timeout',
+        '10',
+        '--retries',
+        '1',
+        '--extractor-retries',
+        '1',
+        '--extractor-args',
+        'youtube:player_client=tv_embedded',
+        '--js-runtimes',
+        process.env.YT_DLP_JS_RUNTIME?.trim() || `node:${process.execPath}`,
+        '--remote-components',
+        'ejs:github',
+        '--dump-single-json',
+        '--format',
+        'bestaudio[ext=m4a]/bestaudio',
+        '--',
+        watchUrl,
+      ], EXTRACTION_TIMEOUT_MS));
+    } finally {
+      if (cookieTempDir) await rm(cookieTempDir, { recursive: true, force: true }).catch(() => undefined);
+    }
 
     let parsed: unknown;
     try {
