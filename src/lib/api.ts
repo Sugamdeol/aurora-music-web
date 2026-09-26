@@ -219,5 +219,5 @@ export function streamCandidates(track: MediaTrack, quality: 'auto' | 'high' | '
   if (track.source === 'local') return [];
   const id = encodeURIComponent(track.id);
   const suffix = quality === 'auto' ? '' : `?quality=${encodeURIComponent(quality)}`;
-  return [`/api/v1/stream/${id}${suffix}`, `/api/stream/${id}${suffix}`];
+  return [`/api/v1/stream/${id}${suffix}`];
 }
