@@ -13,6 +13,7 @@ import {
 import { isAllowedMediaUrl, type AudioExtractor, type AudioQuality } from '../services/ytdlp.js';
 import { fetchLyrics } from '../services/lyrics.js';
 import { generateMusicIdea } from '../services/ai.js';
+import { readPublicPage, searchReference } from '../services/webTools.js';
 import type { MusicProvider } from '../services/youtube.js';
 import { z } from 'zod';
 import {
@@ -134,6 +135,41 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
 
   router.use(limiter(300, 15 * 60_000));
 
+  async function resolveAiQueries(queries: string[], limitPerQuery = 1): Promise<UnknownRecord[]> {
+    const tracks: UnknownRecord[] = [];
+    const seen = new Set<string>();
+    for (let index = 0; index < queries.length; index += 2) {
+      const results = await Promise.allSettled(queries.slice(index, index + 2).map((query) =>
+        withTimeout(music.search(query, 'song'), 12_000, 'Music search timed out.')));
+      for (const outcome of results) {
+        if (outcome.status !== 'fulfilled') continue;
+        const result = record(outcome.value);
+        const matches = values(record(result.songs).contents).map((item) => record(normalizeItem(item, 'song')))
+          .filter((item) => typeof item.id === 'string' && /^[A-Za-z0-9_-]{6,20}$/.test(item.id));
+        for (const match of matches.slice(0, limitPerQuery)) {
+          if (!seen.has(match.id as string)) { seen.add(match.id as string); tracks.push(match); }
+        }
+      }
+    }
+    return tracks;
+  }
+
+  router.post('/ai/resolve', limiter(20, 15 * 60_000), asyncHandler(async (req, res) => {
+    const input = parseWith(z.object({ queries: z.array(z.string().trim().min(2).max(100)).min(1).max(5) }), req.body);
+    const tracks = await resolveAiQueries(input.queries, input.queries.length === 1 ? 6 : 1);
+    if (!tracks.length) throw new HttpError(502, 'UPSTREAM_ERROR', 'No songs found. Try another description.');
+    res.set('Cache-Control', 'no-store').json({ tracks });
+  }));
+
+  router.post('/ai/web', limiter(15, 15 * 60_000), asyncHandler(async (req, res) => {
+    const input = parseWith(z.discriminatedUnion('action', [
+      z.object({ action: z.literal('search'), query: z.string().trim().min(2).max(140) }),
+      z.object({ action: z.literal('read'), url: z.string().trim().min(12).max(1000) }),
+    ]), req.body);
+    const result = input.action === 'search' ? { results: await searchReference(input.query) } : await readPublicPage(input.url);
+    res.set('Cache-Control', 'no-store').json(result);
+  }));
+
   router.post('/ai/music', limiter(8, 15 * 60_000), asyncHandler(async (req, res) => {
     const input = parseWith(z.object({
       prompt: z.string().trim().min(3).max(300),
@@ -141,20 +177,7 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
       seeds: z.array(z.string().trim().min(1).max(120)).max(8).default([]),
     }), req.body);
     const idea = await generateMusicIdea(input.prompt, input.seeds, input.mode);
-    // Two searches at a time match the catalog provider's concurrency limit.
-    const tracks: UnknownRecord[] = [];
-    const seen = new Set<string>();
-    for (let index = 0; index < idea.queries.length; index += 2) {
-      const results = await Promise.allSettled(idea.queries.slice(index, index + 2).map((query) =>
-        withTimeout(music.search(query, 'song'), 12_000, 'Music search timed out.')));
-      for (const outcome of results) {
-        if (outcome.status !== 'fulfilled') continue;
-        const result = record(outcome.value);
-        const match = values(record(result.songs).contents).map((item) => record(normalizeItem(item, 'song')))
-          .find((item) => typeof item.id === 'string' && /^[A-Za-z0-9_-]{6,20}$/.test(item.id) && !seen.has(item.id));
-        if (match) { seen.add(match.id as string); tracks.push(match); }
-      }
-    }
+    const tracks = await resolveAiQueries(idea.queries);
     if (!tracks.length) throw new HttpError(502, 'UPSTREAM_ERROR', 'No matching songs found. Try another mood or artist.');
     res.set('Cache-Control', 'no-store').json({ ...idea, tracks });
   }));

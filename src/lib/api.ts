@@ -125,6 +125,18 @@ async function requestJson(paths: string[], init: RequestInit = {}): Promise<unk
 }
 
 export const api = {
+  async resolveAiSongs(queries: string[]): Promise<MediaTrack[]> {
+    const body = asRecord(await requestJson(['/api/v1/ai/resolve'], { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ queries }) }));
+    return asArray(body.tracks).map((track) => normalizeMedia(track, 'song')).filter((track): track is MediaTrack => Boolean(track && 'source' in track && track.source === 'remote'));
+  },
+  async webSearch(query: string): Promise<Array<{ title: string; snippet: string; url: string }>> {
+    const body = asRecord(await requestJson(['/api/v1/ai/web'], { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'search', query }) }));
+    return asArray(body.results).map((value) => asRecord(value)).filter((value) => typeof value.url === 'string').map((value) => ({ title: asString(value.title), snippet: asString(value.snippet), url: asString(value.url) }));
+  },
+  async webRead(url: string): Promise<{ url: string; text: string }> {
+    const body = asRecord(await requestJson(['/api/v1/ai/web'], { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'read', url }) }));
+    return { url: asString(body.url), text: asString(body.text) };
+  },
   async aiMusic(prompt: string, mode: 'create' | 'extend' | 'discover', seeds: string[] = []): Promise<{ title: string; description: string; tracks: MediaTrack[] }> {
     const body = asRecord(await requestJson(['/api/v1/ai/music'], { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, mode, seeds }) }));
     return {
