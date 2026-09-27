@@ -44,6 +44,7 @@ export function AppShell() {
     document.documentElement.dataset.theme = appearance.colorMode;
     document.documentElement.dataset.oled = String(appearance.oled);
     document.documentElement.dataset.compact = String(appearance.compactRows);
+    document.documentElement.dataset.smooth = String(appearance.smoothMode);
     document.documentElement.style.setProperty('--accent', appearance.accent);
     document.documentElement.classList.toggle('reduce-motion', appearance.reduceMotion);
   }, [appearance]);

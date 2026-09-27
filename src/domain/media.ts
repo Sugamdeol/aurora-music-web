@@ -115,6 +115,7 @@ export interface AppearanceSettings {
   oled: boolean;
   reduceMotion: boolean;
   compactRows: boolean;
+  smoothMode: boolean;
   accent: string;
 }
 
@@ -143,6 +144,7 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   oled: false,
   reduceMotion: false,
   compactRows: false,
+  smoothMode: true,
   accent: '#8aff18',
 };
 

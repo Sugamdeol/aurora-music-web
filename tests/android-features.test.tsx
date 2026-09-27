@@ -82,6 +82,19 @@ describe('song radio and sharing', () => {
   });
 });
 
+describe('mobile queue tools', () => {
+  it('finds a song in a long queue without changing its real queue index', () => {
+    const queue = Array.from({ length: 8 }, (_, index) => ({ ...songs[index % songs.length], id: `song-${index}`, title: `Song ${index}` }));
+    usePlaybackStore.setState({ queue, currentTrack: queue[0], currentIndex: 0, activeSheet: 'queue' });
+    page(<PlayerOverlays />);
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Find in queue' }), { target: { value: 'Song 6' } });
+    expect(screen.getByText('Song 6')).toBeInTheDocument();
+    expect(screen.queryByText('Song 5')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Move Song 6 up' }));
+    expect(usePlaybackStore.getState().queue[5].id).toBe('song-6');
+  });
+});
+
 describe('lyric timing', () => {
   it('delays or advances the selected lyric by the chosen offset', () => {
     expect(lyricIndexAt([0, 5, 10], 5.1, 250)).toBe(0);

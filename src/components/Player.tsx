@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { formatDuration } from '../domain/media';
@@ -115,7 +115,9 @@ function QueueSheet() {
   const [busy, setBusy] = useState(false);
   const [savedId, setSavedId] = useState('');
   const [error, setError] = useState('');
+  const [filter, setFilter] = useState('');
   const upcoming = queue.slice(currentIndex + 1);
+  const visibleQueue = queue.map((track, index) => ({ track, index })).filter(({ track }) => `${track.title} ${track.artist}`.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase()));
   const minutes = Math.round(upcoming.reduce((sum, track) => sum + (track.durationSeconds ?? 0), 0) / 60);
   const incompleteDuration = upcoming.some((track) => !track.durationSeconds);
   const save = async (event: React.FormEvent) => {
@@ -135,9 +137,11 @@ function QueueSheet() {
     {saving && <form className="queue-save-form" onSubmit={(event) => void save(event)}><label>Playlist name<input autoFocus value={name} maxLength={64} onChange={(event) => setName(event.target.value)} required /></label><button className="primary-button" disabled={busy || !name.trim()}>{busy ? 'Saving…' : 'Save queue'}</button></form>}
     {error && <p className="queue-save-message danger" role="alert">{error}</p>}
     {savedId && <p className="queue-save-message" role="status"><Icon name="check" size={16} /> Saved to your library. <Link to={`/playlist/local/${encodeURIComponent(savedId)}`} onClick={() => usePlaybackStore.getState().openSheet(null)}>Open playlist</Link></p>}
-    <div className="queue-list" aria-label="Queued tracks">{queue.map((track, index) => <div key={`${track.id}-${index}`} className={`queue-item ${index === currentIndex ? 'is-current' : ''} ${index < currentIndex ? 'was-played' : ''}`} draggable onDragStart={() => setDragIndex(index)} onDragEnd={() => setDragIndex(null)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (dragIndex !== null) reorder(dragIndex, index); setDragIndex(null); }}>
+    {queue.length > 6 && <label className="queue-filter"><Icon name="search" size={17} /><input type="search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Find in queue" aria-label="Find in queue" /></label>}
+    <div className="queue-list" aria-label="Queued tracks">{visibleQueue.map(({ track, index }) => <div key={`${track.id}-${index}`} className={`queue-item ${index === currentIndex ? 'is-current' : ''} ${index < currentIndex ? 'was-played' : ''}`} draggable={!filter} onDragStart={() => setDragIndex(index)} onDragEnd={() => setDragIndex(null)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (dragIndex !== null) reorder(dragIndex, index); setDragIndex(null); }}>
       <span className="drag-handle" aria-hidden="true"><Icon name="drag" /></span><Artwork src={track.artwork} title={track.title} /><button type="button" className="plain-button" onClick={() => usePlaybackStore.getState().playTrack(track, queue, 'Queue', index)}><strong>{track.title}</strong><small>{track.recommended ? 'Suggested for you · ' : ''}{track.artist}</small></button><div className="queue-item-actions"><IconButton icon="chevron-right" label={`Move ${track.title} up`} className="queue-move queue-move-up" disabled={index === 0} onClick={() => reorder(index, index - 1)} /><IconButton icon="chevron-right" label={`Move ${track.title} down`} className="queue-move queue-move-down" disabled={index === queue.length - 1} onClick={() => reorder(index, index + 1)} /><IconButton icon="x" label={`Remove ${track.title} from queue`} onClick={() => remove(index)} /></div>
     </div>)}</div>
+    {filter && !visibleQueue.length && <p className="sheet-empty">No songs match “{filter}”.</p>}
     {!queue.length && <p className="sheet-empty">Your queue is empty.</p>}
     {queue.length > 0 && <button className="text-button danger queue-stop" onClick={clear}>Stop playback and clear queue</button>}
   </div>;
@@ -173,11 +177,12 @@ function TrackLyrics({ romanized }: { romanized: boolean }) {
     retry: 1,
   });
   const lyrics = query.data?.lines ?? [];
+  const lyricTimes = useMemo(() => lyrics.map((line) => line.time), [lyrics]);
+  const currentLine = lyricIndexAt(lyricTimes, position, offset);
   useEffect(() => {
     if (!query.data?.synced || query.isError) return;
-    const activeIndex = lyricIndexAt(lyrics.map((line) => line.time), position, offset);
-    if (activeIndex < 0) return;
-    const active = viewport.current?.querySelector<HTMLElement>(`[data-lyric-index="${activeIndex}"]`);
+    if (currentLine < 0) return;
+    const active = viewport.current?.querySelector<HTMLElement>(`[data-lyric-index="${currentLine}"]`);
     if (active) {
       const view = viewport.current;
       if (view) {
@@ -189,9 +194,8 @@ function TrackLyrics({ romanized }: { romanized: boolean }) {
         }
       }
     }
-  }, [lyrics, position, offset, query.data?.synced, query.isError]);
+  }, [lyrics, currentLine, query.data?.synced, query.isError]);
 
-  const currentLine = lyricIndexAt(lyrics.map((line) => line.time), position, offset);
   const loading = query.isLoading || query.isFetching;
   const error = query.isError;
   const ready = lyrics.length > 0;
@@ -236,6 +240,7 @@ function startSleepTimer(minutes?: number) {
 
 function SleepSheet() {
   const [, refresh] = useState(0);
+  const [customMinutes, setCustomMinutes] = useState('10');
   const position = usePlaybackStore((state) => state.position);
   const duration = usePlaybackStore((state) => state.duration);
   useEffect(() => { const timer = window.setInterval(() => refresh((value) => value + 1), 1000); return () => window.clearInterval(timer); }, []);
@@ -246,6 +251,7 @@ function SleepSheet() {
     <p>Choose when Aurora should gently stop playback.</p>
     {active && <div className="sleep-active"><Icon name="clock" /><span>{sleepEndsAt === -1 ? 'At the end of this track' : `Pausing in about ${remaining} min`}</span><button className="text-button danger" onClick={() => { clearSleepTimer(); refresh((value) => value + 1); }}>Cancel</button></div>}
     <div className="sleep-options">{[15, 30, 45, 60].map((minutes) => <button key={minutes} onClick={() => { startSleepTimer(minutes); refresh((value) => value + 1); }}><strong>{minutes}</strong><span>minutes</span></button>)}<button className="sleep-end-track" onClick={() => { startSleepTimer(); refresh((value) => value + 1); }} disabled={!duration || position >= duration}><Icon name="music" /><span>At end of this track</span></button></div>
+    <form className="sleep-custom" onSubmit={(event) => { event.preventDefault(); const minutes = Number(customMinutes); if (!Number.isInteger(minutes) || minutes < 1 || minutes > 240) return; startSleepTimer(minutes); refresh((value) => value + 1); }}><label htmlFor="sleep-custom-minutes">Custom timer</label><input id="sleep-custom-minutes" type="number" min="1" max="240" step="1" inputMode="numeric" value={customMinutes} onChange={(event) => setCustomMinutes(event.target.value)} /><span>min</span><button className="secondary-button" type="submit">Set timer</button></form>
   </div>;
 }
 

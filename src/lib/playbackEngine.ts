@@ -125,6 +125,23 @@ export class PlaybackEngine {
 
   private async applyState(state: StoreState, previous: StoreState): Promise<void> {
     if (this.destroyed) return;
+    // HTMLAudioElement emits several clock ticks each second. A clock-only
+    // update should not reconfigure audio, inspect the queue, or prepare a deck.
+    if (state.position !== previous.position && state.currentTrack === previous.currentTrack
+      && state.queue === previous.queue && state.sourceRevision === previous.sourceRevision
+      && state.isPlaying === previous.isPlaying && state.status === previous.status
+      && state.duration === previous.duration && state.volume === previous.volume
+      && state.muted === previous.muted && state.playbackRate === previous.playbackRate
+      && state.shuffle === previous.shuffle && state.repeat === previous.repeat
+      && state.currentIndex === previous.currentIndex) {
+      if (Math.abs((this.audio.currentTime || 0) - state.position) > 1.25 && Number.isFinite(state.position)) {
+        this.cancelFade();
+        try { this.audio.currentTime = state.position; this.lastListenPosition = state.position; } catch { /* metadata not ready */ }
+      }
+      if (state.isPlaying && state.duration - state.position <= 45) void this.prepareNext();
+      this.updatePositionState();
+      return;
+    }
     this.audio.volume = state.volume * (this.fading?.incomingGain ?? 1);
     this.audio.muted = state.muted;
     this.audio.playbackRate = state.playbackRate;

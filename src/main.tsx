@@ -6,6 +6,7 @@ import './styles.css';
 import './refinements.css';
 import './android-features.css';
 import './player-polish.css';
+import './smooth-mode.css';
 
 const queryClient = new QueryClient({
   defaultOptions: {
