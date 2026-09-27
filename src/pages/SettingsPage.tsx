@@ -191,77 +191,48 @@ function YouTubeAccountSettings() {
   </div>;
 }
 function AccountSyncSettings() {
-  const [account, setAccount] = useState<{ username: str…37117 tokens truncated…u2500────────────────────────────
-   The glass pass paints `background-image` on every generic button, which
-   out-specifies `.browse-category` and flattened all twelve tiles to the same
-   grey. The duotone now lives on ::before, one layer below that wash, so the
-   category colour survives in every style and theme. */
-.browse-category { --category-tilt:118deg;min-height:132px;align-items:flex-end;padding:18px 20px;border-color:rgba(255,255,255,.1);background-color:transparent;font-size:22px;letter-spacing:-.6px;box-shadow:inset 0 1px rgba(255,255,255,.14),0 14px 34px rgba(0,0,0,.26);transition:transform .24s var(--ease),border-color .24s ease,box-shadow .24s ease; }
-.browse-category::before { inset:0;width:auto;height:auto;border:0;border-radius:inherit;background:linear-gradient(var(--category-tilt),var(--category-a),var(--category-b) 78%),radial-gradient(ellipse 70% 100% at 8% 0%,rgba(255,255,255,.22),transparent 62%);box-shadow:none;transition:transform .34s var(--ease),filter .24s ease; }
-.browse-category::after { right:-26px;bottom:-54px;width:132px;height:132px;border:1px solid rgba(255,255,255,.3);border-radius:50%;background:radial-gradient(circle at 34% 28%,rgba(255,255,255,.28),transparent 66%);box-shadow:0 0 0 13px rgba(255,255,255,.05),0 0 0 28px rgba(255,255,255,.03);filter:none;transition:transform .34s var(--ease); }
-.browse-category>span { font-weight:780;text-shadow:0 1px 14px rgba(0,0,0,.28); }
-.browse-category>i { right:22px;bottom:14px;height:38px;background:rgba(255,255,255,.24);box-shadow:8px 0 rgba(255,255,255,.15),16px 0 rgba(255,255,255,.1); }
-.browse-category:hover { transform:translateY(-3px);border-color:rgba(255,255,255,.3);box-shadow:inset 0 1px rgba(255,255,255,.2),0 20px 42px rgba(0,0,0,.34); }
-.browse-category:hover::before { transform:scale(1.06);filter:saturate(1.16) brightness(1.06); }
-.browse-category:hover::after { transform:translate(-8px,-8px) scale(1.07); }
-.browse-category:active { transform:translateY(-1px); }
-:root[data-theme="light"] .browse-category::before { background:linear-gradient(var(--category-tilt),var(--category-a),var(--category-b) 78%),radial-gradient(ellipse 70% 100% at 8% 0%,rgba(255,255,255,.3),transparent 62%); }
-
-/* Brighter, better-separated duotones — the old set collapsed into brown-grey. */
-.category-pop { --category-a:#e0479f;--category-b:#6b2a8f; }
-.category-hiphop { --category-a:#f0842c;--category-b:#7a2748; }
-.category-punjabi { --category-a:#f2622a;--category-b:#8c2f4c; }
-.category-bollywood { --category-a:#e03a63;--category-b:#5a2a86; }
-.category-dance { --category-a:#7a54e8;--category-b:#2f2a7d; }
-.category-rnb { --category-a:#2ba9bb;--category-b:#25497a; }
-.category-indie { --category-a:#63b055;--category-b:#22604f; }
-.category-chill { --category-a:#36bcb4;--category-b:#245f88; }
-.category-focus { --category-a:#7186ad;--category-b:#333f6e; }
-.category-workout { --category-a:#ef5a38;--category-b:#682848; }
-.category-soundtracks { --category-a:#8ea944;--category-b:#33563f; }
-.category-decades { --category-a:#d1913f;--category-b:#66424f; }
-
-/* Search field: calmer resting state, a focus ring that actually reads. */
-.search-field { transition:border-color .2s ease,box-shadow .24s var(--ease),background-color .2s ease; }
-.search-field:focus-within { border-color:color-mix(in srgb,var(--accent) 62%,transparent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 9%,transparent),var(--shadow-medium); }
-.search-field input::placeholder { color:var(--quiet); }
-.search-field>button { transition:background .16s ease,color .16s ease,transform .16s var(--ease); }
-.search-field>button:not(.search-go):hover { background:rgba(255,255,255,.06);color:var(--ink); }
-.search-field .search-go { box-shadow:0 4px 16px color-mix(in srgb,var(--accent) 22%,transparent); }
-.search-field .search-go:hover { transform:scale(1.06); }
-.search-field .search-go:active { transform:scale(.95); }
-
-/* Suggestions rise into place instead of snapping. */
-.search-suggestions { animation:suggestions-in .18s var(--ease) both; }
-.search-suggestions>button { transition:background .14s ease,color .14s ease; }
-.search-suggestions>button>span { font-size:13px; }
-@keyframes suggestions-in { from { transform:translateY(-6px);opacity:0; } to { transform:none;opacity:1; } }
-
-/* Scope switch + category pills: one consistent control rhythm. */
-.search-scopes { margin-bottom:14px;box-shadow:inset 0 1px rgba(255,255,255,.05); }
-.search-scopes>button { min-height:36px;transition:background .2s var(--ease),color .2s ease,box-shadow .2s ease; }
-.search-scopes>button.is-selected { background:rgba(255,255,255,.12);box-shadow:inset 0 0 0 1px rgba(255,255,255,.09),0 2px 10px rgba(0,0,0,.2); }
-.search-kinds { margin-bottom:26px; }
-.search-idle { gap:38px; }
-.browse-categories .section-header { margin-bottom:16px; }
-.browse-category-grid { gap:14px; }
-
-/* Recent searches read as a list, not a stack of anonymous buttons. */
-.recent-searches>header { margin-bottom:6px; }
-.recent-searches>div>button { min-height:48px;padding:0 12px;border-radius:12px;transition:background .16s ease,transform .16s var(--ease); }
-.recent-searches>div>button:hover { transform:translateX(2px);background:rgba(255,255,255,.045); }
-.recent-searches>div>button>svg:first-child { color:var(--quiet);transition:color .16s ease; }
-.recent-searches>div>button:hover>svg:first-child { color:var(--accent); }
-.recent-searches>div>button span { font-size:13px; }
-
-/* Result header: a quiet label so the eye lands on the results themselves. */
-.result-summary { padding-bottom:11px;font-size:12px;letter-spacing:.05em;text-transform:uppercase; }
-.result-summary .text-button { letter-spacing:0;text-transform:none; }
-.library-search-intro { border-radius:20px; }
-
-@media (max-width:760px) {
-  .browse-category { min-height:108px;padding:14px 15px;font-size:18px; }
-  .browse-category::after { right:-30px;bottom:-58px;width:108px;height:108px; }
-  .browse-category-grid { gap:10px; }
-  .search-idle { gap:30px; }
+  const [account, setAccount] = useState<{ username: string } | null>(null);
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [mode, setMode] = useState<'login'|'register'>('register');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [syncedAt, setSyncedAt] = useState('');
+  const [syncEnabled, setSyncEnabled] = useState(false);
+  useEffect(() => { void Promise.all([getSyncStatus(), currentSyncAccount(), getSetting('sync.enabled', false)]).then(([ready, user, enabled]) => { setConfigured(ready); setAccount(user); setSyncEnabled(Boolean(enabled)); if (user && enabled) enableAutomaticSync(); }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Account sync status could not be loaded.')); }, []);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); setError(''); setMessage(''); setBusy(true);
+    try {
+      const user = await authenticateSync(username, password, mode);
+      setAccount(user); setPassword('');
+      setMessage(mode === 'register' ? 'Account created. Turn on sync below when you’re ready.' : 'Signed in. Turn on sync below when you’re ready.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not connect to account sync.'); }
+    finally { setBusy(false); }
+  };
+  const syncNow = async () => { setBusy(true); setError(''); setMessage(''); try { await syncLibrary(); setSyncedAt(new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })); setMessage('Your library is up to date.'); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Sync failed.'); } finally { setBusy(false); } };
+  const toggleSync = async (enabled: boolean) => {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      if (enabled) { if (!account) throw new Error('Sign in or create an account before turning on sync.'); await setSetting('sync.enabled', true); setSyncEnabled(true); await syncLibrary(); enableAutomaticSync(); setSyncedAt(new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })); setMessage('Sync is on for this device.'); }
+      else { await setSetting('sync.enabled', false); setSyncEnabled(false); disableAutomaticSync(); setMessage('Sync is off for this device.'); }
+    } catch (reason) { if (enabled) { await setSetting('sync.enabled', false); setSyncEnabled(false); } setError(reason instanceof Error ? reason.message : 'Could not change sync settings.'); }
+    finally { setBusy(false); }
+  };
+  const signOut = async () => { setBusy(true); try { await logoutSync(); disableAutomaticSync(); await setSetting('sync.enabled', false); setSyncEnabled(false); setAccount(null); setMessage('Signed out. This device’s library is unchanged.'); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not sign out.'); } finally { setBusy(false); } };
+  return <div className="account-sync-panel">
+    <div className="account-sync-intro"><span className="setting-glyph"><Icon name="music" /></span><div><strong>{account ? `Synced as ${account.username}` : 'Your music, on every device'}</strong><small>Sync likes, playlists, history and settings. Imported audio stays on this device.</small></div></div>
+    {configured === false && <p className="account-sync-note">Account sync is not enabled on the server yet. Add a claimed MantleDB namespace and key to the server environment.</p>}
+    {configured !== false && !account && <form className="account-sync-form" onSubmit={(event)=>void submit(event)}>
+      <div className="account-sync-tabs"><button type="button" className={mode==='register'?'active':''} onClick={()=>setMode('register')}>Create account</button><button type="button" className={mode==='login'?'active':''} onClick={()=>setMode('login')}>Sign in</button></div>
+      <label>Username<input required minLength={3} maxLength={24} pattern="[A-Za-z0-9_]+" autoCapitalize="none" autoComplete="username" value={username} onChange={(event)=>setUsername(event.target.value)} placeholder="your_username" /></label>
+      <label>Password<input required minLength={10} maxLength={128} type="password" autoComplete={mode==='register'?'new-password':'current-password'} value={password} onChange={(event)=>setPassword(event.target.value)} placeholder="At least 10 characters" /></label>
+      <button className="primary-button account-sync-submit" disabled={busy||configured===null}>{busy ? 'Connecting…' : mode==='register' ? 'Create account & sync' : 'Sign in & sync'}</button>
+    </form>}
+    {account && <><label className="setting-block account-sync-toggle"><div><strong>Enable sync on this device</strong><small>Only this device syncs while this is on. Turn it off any time.</small></div><input type="checkbox" checked={syncEnabled} disabled={busy} onChange={(event)=>void toggleSync(event.target.checked)} /></label><div className="account-sync-actions"><span className="account-sync-last">{syncEnabled ? syncedAt ? `Last synced ${syncedAt}` : 'Sync is on and runs when your library changes.' : 'Sync is off. Your music remains on this device.'}</span><button className="secondary-button" disabled={busy||!syncEnabled} onClick={()=>void syncNow()}>{busy?'Syncing…':'Sync now'}</button><button className="text-button" disabled={busy} onClick={()=>void signOut()}>Sign out</button></div></>}
+    {error && <p className="account-sync-error" role="alert">{error}</p>}{message && <p className="account-sync-message" role="status">{message}</p>}
+    <small className="account-sync-security">Passwords are protected with a salted scrypt hash. Use a unique password for Aurora.</small>
+  </div>;
 }
+const capabilityLabels: Record<keyof CapabilitySnapshot, string> = { indexedDb: 'Offline library', mediaSession: 'System media controls', webAudio: 'Advanced audio', fileSystemAccess: 'File picker', serviceWorker: 'Offline shell', broadcastChannel: 'Tab sync' };

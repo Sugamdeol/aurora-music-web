@@ -89,7 +89,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     nowLiked ? liked.add(track.id) : liked.delete(track.id);
     set((state) => ({ likedIds: liked, likedTracks: nowLiked ? [track, ...state.likedTracks.filter((item) => item.id !== track.id)] : state.likedTracks.filter((item) => item.id !== track.id) }));
     const existing = await db.tracks.get(track.id);
-    await db.tracks.put({ ...existing, ...track, likedAt: nowLiked ? Date.now() : undefined });
+    const changedAt = Date.now();
+    await db.tracks.put({ ...existing, ...track, likedAt: nowLiked ? changedAt : undefined, unlikedAt: nowLiked ? undefined : changedAt });
   },
 
   recordPlay: async (track) => {

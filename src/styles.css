@@ -417,6 +417,26 @@ button:disabled { opacity:.42; cursor:not-allowed; }
 .setting-action:hover { background:rgba(255,255,255,.032); }
 .setting-action>svg { color:var(--quiet); }
 .setting-glyph { display:grid;width:37px;height:37px;flex:none;place-items:center;border-radius:12px;background:color-mix(in srgb,var(--accent) 7%,transparent);color:var(--accent); }
+.account-sync-panel { padding:14px; }
+.account-sync-intro { display:flex;align-items:center;gap:12px; }
+.account-sync-intro>div { display:grid;gap:4px; }
+.account-sync-intro strong { font-size:13px; }
+.account-sync-intro small,.account-sync-security,.account-sync-last { color:var(--muted);font-size:12px;line-height:1.5; }
+.account-sync-form { display:grid;gap:12px;margin-top:16px; }
+.account-sync-form>label { display:grid;gap:6px;color:var(--muted);font-size:12px; }
+.account-sync-form input { width:100%;min-height:43px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit; }
+.account-sync-tabs { display:grid;grid-template-columns:1fr 1fr;padding:3px;border:1px solid var(--line);border-radius:12px; }
+.account-sync-tabs button { min-height:36px;border:0;border-radius:9px;background:transparent;color:var(--muted); }
+.account-sync-tabs button.active { background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--ink); }
+.account-sync-submit { width:100%;min-height:44px; }
+.account-sync-toggle { padding:12px 0 4px; }
+.account-sync-toggle input { accent-color:var(--accent); }
+.account-sync-actions { display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px; }
+.account-sync-last { flex:1 1 100%; }
+.account-sync-actions button { min-height:38px; }
+.account-sync-note,.account-sync-error,.account-sync-message { margin:12px 0 0;font-size:12px;line-height:1.5; }
+.account-sync-note,.account-sync-security { display:block;margin-top:12px;color:var(--muted); }
+.account-sync-error { color:var(--danger); }.account-sync-message { color:var(--accent); }
 .danger-setting .setting-glyph { background:rgba(255,110,117,.06);color:var(--danger); }
 .style-options { display:grid!important;grid-template-columns:1fr 1fr;gap:9px;padding:11px;border-bottom:1px solid var(--line); }
 .style-options>button,.choice-options>button { display:flex;min-height:90px;align-items:center;gap:12px;padding:10px;border:1px solid var(--line);border-radius:15px;background:rgba(255,255,255,.02);color:inherit;text-align:left;cursor:pointer; }

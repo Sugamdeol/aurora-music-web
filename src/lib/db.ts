@@ -5,6 +5,7 @@ import { normalizeMedia } from './api';
 
 export interface TrackRecord extends MediaTrack {
   likedAt?: number;
+  unlikedAt?: number;
   lastPlayedAt?: number;
   playCount?: number;
 }
