@@ -79,7 +79,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
     res.setHeader('X-Request-Id', requestId);
     next();
   });
-  app.use(express.json({ limit: '32kb', strict: true }));
+  app.use(express.json({ limit: '64kb', strict: true }));
 
   const api = createApiRouter({ music, audio });
   app.use('/api/v1/sync', createSyncRouter());
