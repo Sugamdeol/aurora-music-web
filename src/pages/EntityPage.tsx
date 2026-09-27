@@ -66,7 +66,7 @@ export function EntityPage({ forcedKind, local: isLocal = false }: { forcedKind?
     </section>
     {shareMessage && <p role="status" className="transition-note">{shareMessage}</p>}
 
-    {localPlaylist && <div className="playlist-edit-entry"><button className="secondary-button" onClick={() => setEditing((value) => !value)}><Icon name="sliders" size={16} />{editing ? 'Done editing' : 'Edit playlist and song order'}</button></div>}
+    {localPlaylist && <div className="playlist-edit-entry"><button className="secondary-button" onClick={() => setEditing((value) => !value)}><Icon name="sliders" size={16} />{editing ? 'Done editing' : 'Edit playlist and song order'}</button><Link className="secondary-button" to={`/ai?playlist=${encodeURIComponent(localPlaylist.id)}`}><Icon name="sparkles" size={16} /> Extend with AI</Link></div>}
     {editing && localPlaylist && <PlaylistEditor key={localPlaylist.id} playlist={localPlaylist} onClose={() => setEditing(false)} />}
     {tracks.length > 0 && !editing && <section className="entity-tracks"><header className="section-header"><h2>{detail.kind === 'artist' ? 'Popular tracks' : 'Track list'}</h2><span>{tracks.length} songs</span></header><div className="song-list">{tracks.map((track, index) => <SongRow key={`${track.id}-${index}`} track={track} context={tracks} contextLabel={detail.title} index={index} playlistId={localId || undefined} />)}</div></section>}
     {!tracks.length && <EmptyState icon="music" title="No tracks here yet" action={localId ? <Link className="primary-button" to="/search">Find music</Link> : undefined}>{localId ? 'Use a song menu to add music to this playlist.' : 'This collection does not expose playable tracks.'}</EmptyState>}

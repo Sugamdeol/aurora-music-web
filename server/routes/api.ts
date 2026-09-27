@@ -12,7 +12,9 @@ import {
 } from '../normalizers.js';
 import { isAllowedMediaUrl, type AudioExtractor, type AudioQuality } from '../services/ytdlp.js';
 import { fetchLyrics } from '../services/lyrics.js';
+import { generateMusicIdea } from '../services/ai.js';
 import type { MusicProvider } from '../services/youtube.js';
+import { z } from 'zod';
 import {
   albumParamsSchema,
   artistParamsSchema,
@@ -131,6 +133,31 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
   }));
 
   router.use(limiter(300, 15 * 60_000));
+
+  router.post('/ai/music', limiter(8, 15 * 60_000), asyncHandler(async (req, res) => {
+    const input = parseWith(z.object({
+      prompt: z.string().trim().min(3).max(300),
+      mode: z.enum(['create', 'extend', 'discover']).default('create'),
+      seeds: z.array(z.string().trim().min(1).max(120)).max(8).default([]),
+    }), req.body);
+    const idea = await generateMusicIdea(input.prompt, input.seeds, input.mode);
+    // Two searches at a time match the catalog provider's concurrency limit.
+    const tracks: UnknownRecord[] = [];
+    const seen = new Set<string>();
+    for (let index = 0; index < idea.queries.length; index += 2) {
+      const results = await Promise.allSettled(idea.queries.slice(index, index + 2).map((query) =>
+        withTimeout(music.search(query, 'song'), 12_000, 'Music search timed out.')));
+      for (const outcome of results) {
+        if (outcome.status !== 'fulfilled') continue;
+        const result = record(outcome.value);
+        const match = values(record(result.songs).contents).map((item) => record(normalizeItem(item, 'song')))
+          .find((item) => typeof item.id === 'string' && /^[A-Za-z0-9_-]{6,20}$/.test(item.id) && !seen.has(item.id));
+        if (match) { seen.add(match.id as string); tracks.push(match); }
+      }
+    }
+    if (!tracks.length) throw new HttpError(502, 'UPSTREAM_ERROR', 'No matching songs found. Try another mood or artist.');
+    res.set('Cache-Control', 'no-store').json({ ...idea, tracks });
+  }));
 
   router.get('/account/youtube-music', asyncHandler(async (req, res) => {
     const clientId = process.env.GOOGLE_CLIENT_ID;

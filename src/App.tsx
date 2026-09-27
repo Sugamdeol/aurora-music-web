@@ -18,6 +18,7 @@ const RoomPage = lazy(() => import('./pages/RoomPage').then((module) => ({ defau
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((module) => ({ default: module.SettingsPage })));
 const StatsPage = lazy(() => import('./pages/StatsPage').then((module) => ({ default: module.StatsPage })));
 const HistoryPage = lazy(() => import('./pages/HistoryPage').then((module) => ({ default: module.HistoryPage })));
+const AiPage = lazy(() => import('./pages/AiPage').then((module) => ({ default: module.AiPage })));
 
 export default function App() {
   usePlaybackEngine();
@@ -62,6 +63,7 @@ export default function App() {
           <Route index element={<HomePage />} />
           <Route path="search" element={<SearchPage />} />
           <Route path="explore" element={<ExplorePage />} />
+          <Route path="ai" element={<AiPage />} />
           <Route path="library" element={<LibraryPage />} />
           <Route path="room" element={<RoomPage />} />
           <Route path="room/:roomCode" element={<RoomPage />} />

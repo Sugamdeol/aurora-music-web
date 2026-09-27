@@ -107,7 +107,7 @@ export function LibraryPage() {
   const playAll = (shuffle = false) => visibleTracks.length && usePlaybackStore.getState().playTracks(shuffle ? shuffledTracks(visibleTracks) : visibleTracks, 0, label);
 
   return <div className="page library-page">
-    <PageHeader title="Your library" description="The songs, files, and playlists you have made your own." action={<button className="primary-button" onClick={() => setCreating(true)}><Icon name="plus" size={17} /> New playlist</button>} />
+    <PageHeader title="Your library" description="The songs, files, and playlists you have made your own." action={<div className="library-play-actions"><Link className="secondary-button" to="/ai"><Icon name="sparkles" size={17} /> AI playlist</Link><button className="primary-button" onClick={() => setCreating(true)}><Icon name="plus" size={17} /> New playlist</button></div>} />
     <div className="library-highlights">
       <button className="library-highlight liked-highlight" onClick={() => changeTab('liked')}><span><Icon name="heart" /></span><div><strong>Liked songs</strong><small>{liked.length} tracks you love</small></div><Icon name="chevron-right" /></button>
       <button className="library-highlight recent-highlight" onClick={() => changeTab('recent')}><span><Icon name="clock" /></span><div><strong>Recently played</strong><small>{recent.length} tracks in your history</small></div><Icon name="chevron-right" /></button>

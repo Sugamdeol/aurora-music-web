@@ -125,6 +125,14 @@ async function requestJson(paths: string[], init: RequestInit = {}): Promise<unk
 }
 
 export const api = {
+  async aiMusic(prompt: string, mode: 'create' | 'extend' | 'discover', seeds: string[] = []): Promise<{ title: string; description: string; tracks: MediaTrack[] }> {
+    const body = asRecord(await requestJson(['/api/v1/ai/music'], { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, mode, seeds }) }));
+    return {
+      title: asString(body.title).slice(0, 64) || 'Your AI mix',
+      description: asString(body.description).slice(0, 200),
+      tracks: asArray(body.tracks).map((track) => normalizeMedia(track, 'song')).filter((track): track is MediaTrack => Boolean(track && 'source' in track && track.source === 'remote')),
+    };
+  },
   async warmStream(track: MediaTrack, quality: 'auto' | 'high' | 'data-saver' = 'auto'): Promise<void> {
     if (track.source !== 'remote' || track.streamUrl) return;
     const suffix = quality === 'auto' ? '' : `?quality=${encodeURIComponent(quality)}`;
