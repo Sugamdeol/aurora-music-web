@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AppearanceSettings, CapabilitySnapshot, MediaTrack, PlaybackSettings } from '../domain/media';
-import { db, type HistoryRecord } from '../lib/db';
+import { db, getSetting, setSetting, type HistoryRecord } from '../lib/db';
 import { useLibraryStore } from '../store/library';
 import { PageHeader } from '../components/primitives';
 import { Icon } from '../components/Icon';
 import { useRoomStore } from '../room/client';
 import { prepareGoogleIdentity, useYouTubeAccountStore } from '../store/youtubeAccount';
 import { EqualizerControls } from '../components/EqualizerControls';
+import { authenticateSync, currentSyncAccount, disableAutomaticSync, enableAutomaticSync, getSyncStatus, logoutSync, syncLibrary } from '../lib/sync';
 
 const accentChoices = [
   { name: 'Aurora lime', value: '#8aff18' },
@@ -131,6 +132,7 @@ export function SettingsPage() {
     <PageHeader title="Your Aurora" description="Tune the look, playback, and local data on this device." />
     <section className="profile-card glass-surface"><span className="profile-avatar">{(profileName.trim()[0] || 'L').toUpperCase()}</span><div><label htmlFor="profile-name">Display name</label><input id="profile-name" name="displayName" autoComplete="nickname" value={profileName} maxLength={32} onChange={(event) => setProfileName(event.target.value)} onBlur={saveProfileName} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /><p>Used when you join a listening room.</p></div><img src="/aurora.svg" alt="Aurora Music" /></section>
 
+    <SettingsGroup title="Account and sync"><AccountSyncSettings /></SettingsGroup>
     <SettingsGroup title="Personalized suggestions"><YouTubeAccountSettings /></SettingsGroup>
 
     <SettingsGroup title="Appearance">
@@ -188,4 +190,78 @@ function YouTubeAccountSettings() {
     <button className={connected ? 'secondary-button youtube-account-button' : 'primary-button youtube-account-button'} disabled={connecting || (!connected && (!configured || !identityReady))} onClick={() => connected ? disconnect() : void connect()}>{connecting ? 'Connecting…' : connected ? 'Disconnect' : !identityReady ? 'Loading Google sign-in…' : 'Connect YouTube Music'}</button>
   </div>;
 }
-const capabilityLabels: Record<keyof CapabilitySnapshot, string> = { indexedDb: 'Offline library', mediaSession: 'System media controls', webAudio: 'Advanced audio', fileSystemAccess: 'File picker', serviceWorker: 'Offline shell', broadcastChannel: 'Tab sync' };
+function AccountSyncSettings() {
+  const [account, setAccount] = useState<{ username: str…37117 tokens truncated…u2500────────────────────────────
+   The glass pass paints `background-image` on every generic button, which
+   out-specifies `.browse-category` and flattened all twelve tiles to the same
+   grey. The duotone now lives on ::before, one layer below that wash, so the
+   category colour survives in every style and theme. */
+.browse-category { --category-tilt:118deg;min-height:132px;align-items:flex-end;padding:18px 20px;border-color:rgba(255,255,255,.1);background-color:transparent;font-size:22px;letter-spacing:-.6px;box-shadow:inset 0 1px rgba(255,255,255,.14),0 14px 34px rgba(0,0,0,.26);transition:transform .24s var(--ease),border-color .24s ease,box-shadow .24s ease; }
+.browse-category::before { inset:0;width:auto;height:auto;border:0;border-radius:inherit;background:linear-gradient(var(--category-tilt),var(--category-a),var(--category-b) 78%),radial-gradient(ellipse 70% 100% at 8% 0%,rgba(255,255,255,.22),transparent 62%);box-shadow:none;transition:transform .34s var(--ease),filter .24s ease; }
+.browse-category::after { right:-26px;bottom:-54px;width:132px;height:132px;border:1px solid rgba(255,255,255,.3);border-radius:50%;background:radial-gradient(circle at 34% 28%,rgba(255,255,255,.28),transparent 66%);box-shadow:0 0 0 13px rgba(255,255,255,.05),0 0 0 28px rgba(255,255,255,.03);filter:none;transition:transform .34s var(--ease); }
+.browse-category>span { font-weight:780;text-shadow:0 1px 14px rgba(0,0,0,.28); }
+.browse-category>i { right:22px;bottom:14px;height:38px;background:rgba(255,255,255,.24);box-shadow:8px 0 rgba(255,255,255,.15),16px 0 rgba(255,255,255,.1); }
+.browse-category:hover { transform:translateY(-3px);border-color:rgba(255,255,255,.3);box-shadow:inset 0 1px rgba(255,255,255,.2),0 20px 42px rgba(0,0,0,.34); }
+.browse-category:hover::before { transform:scale(1.06);filter:saturate(1.16) brightness(1.06); }
+.browse-category:hover::after { transform:translate(-8px,-8px) scale(1.07); }
+.browse-category:active { transform:translateY(-1px); }
+:root[data-theme="light"] .browse-category::before { background:linear-gradient(var(--category-tilt),var(--category-a),var(--category-b) 78%),radial-gradient(ellipse 70% 100% at 8% 0%,rgba(255,255,255,.3),transparent 62%); }
+
+/* Brighter, better-separated duotones — the old set collapsed into brown-grey. */
+.category-pop { --category-a:#e0479f;--category-b:#6b2a8f; }
+.category-hiphop { --category-a:#f0842c;--category-b:#7a2748; }
+.category-punjabi { --category-a:#f2622a;--category-b:#8c2f4c; }
+.category-bollywood { --category-a:#e03a63;--category-b:#5a2a86; }
+.category-dance { --category-a:#7a54e8;--category-b:#2f2a7d; }
+.category-rnb { --category-a:#2ba9bb;--category-b:#25497a; }
+.category-indie { --category-a:#63b055;--category-b:#22604f; }
+.category-chill { --category-a:#36bcb4;--category-b:#245f88; }
+.category-focus { --category-a:#7186ad;--category-b:#333f6e; }
+.category-workout { --category-a:#ef5a38;--category-b:#682848; }
+.category-soundtracks { --category-a:#8ea944;--category-b:#33563f; }
+.category-decades { --category-a:#d1913f;--category-b:#66424f; }
+
+/* Search field: calmer resting state, a focus ring that actually reads. */
+.search-field { transition:border-color .2s ease,box-shadow .24s var(--ease),background-color .2s ease; }
+.search-field:focus-within { border-color:color-mix(in srgb,var(--accent) 62%,transparent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 9%,transparent),var(--shadow-medium); }
+.search-field input::placeholder { color:var(--quiet); }
+.search-field>button { transition:background .16s ease,color .16s ease,transform .16s var(--ease); }
+.search-field>button:not(.search-go):hover { background:rgba(255,255,255,.06);color:var(--ink); }
+.search-field .search-go { box-shadow:0 4px 16px color-mix(in srgb,var(--accent) 22%,transparent); }
+.search-field .search-go:hover { transform:scale(1.06); }
+.search-field .search-go:active { transform:scale(.95); }
+
+/* Suggestions rise into place instead of snapping. */
+.search-suggestions { animation:suggestions-in .18s var(--ease) both; }
+.search-suggestions>button { transition:background .14s ease,color .14s ease; }
+.search-suggestions>button>span { font-size:13px; }
+@keyframes suggestions-in { from { transform:translateY(-6px);opacity:0; } to { transform:none;opacity:1; } }
+
+/* Scope switch + category pills: one consistent control rhythm. */
+.search-scopes { margin-bottom:14px;box-shadow:inset 0 1px rgba(255,255,255,.05); }
+.search-scopes>button { min-height:36px;transition:background .2s var(--ease),color .2s ease,box-shadow .2s ease; }
+.search-scopes>button.is-selected { background:rgba(255,255,255,.12);box-shadow:inset 0 0 0 1px rgba(255,255,255,.09),0 2px 10px rgba(0,0,0,.2); }
+.search-kinds { margin-bottom:26px; }
+.search-idle { gap:38px; }
+.browse-categories .section-header { margin-bottom:16px; }
+.browse-category-grid { gap:14px; }
+
+/* Recent searches read as a list, not a stack of anonymous buttons. */
+.recent-searches>header { margin-bottom:6px; }
+.recent-searches>div>button { min-height:48px;padding:0 12px;border-radius:12px;transition:background .16s ease,transform .16s var(--ease); }
+.recent-searches>div>button:hover { transform:translateX(2px);background:rgba(255,255,255,.045); }
+.recent-searches>div>button>svg:first-child { color:var(--quiet);transition:color .16s ease; }
+.recent-searches>div>button:hover>svg:first-child { color:var(--accent); }
+.recent-searches>div>button span { font-size:13px; }
+
+/* Result header: a quiet label so the eye lands on the results themselves. */
+.result-summary { padding-bottom:11px;font-size:12px;letter-spacing:.05em;text-transform:uppercase; }
+.result-summary .text-button { letter-spacing:0;text-transform:none; }
+.library-search-intro { border-radius:20px; }
+
+@media (max-width:760px) {
+  .browse-category { min-height:108px;padding:14px 15px;font-size:18px; }
+  .browse-category::after { right:-30px;bottom:-58px;width:108px;height:108px; }
+  .browse-category-grid { gap:10px; }
+  .search-idle { gap:30px; }
+}

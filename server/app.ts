@@ -6,6 +6,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import express, { type Express, type NextFunction } from 'express';
 import helmet from 'helmet';
 import { createApiRouter } from './routes/api.js';
+import { createSyncRouter } from './routes/sync.js';
 import { errorHandler, HttpError, notFoundHandler } from './errors.js';
 import { YtDlpService, type AudioExtractor } from './services/ytdlp.js';
 import { YouTubeMusicService, type MusicProvider } from './services/youtube.js';
@@ -81,6 +82,8 @@ export function createApp(options: CreateAppOptions = {}): Express {
   app.use(express.json({ limit: '32kb', strict: true }));
 
   const api = createApiRouter({ music, audio });
+  app.use('/api/v1/sync', createSyncRouter());
+  app.use('/api/sync', createSyncRouter());
   app.use('/api/v1', (req, res, next) => {
     res.locals.apiVersion = 'v1';
     next();

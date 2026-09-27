@@ -8,6 +8,13 @@ export type ErrorCode =
   | 'REQUEST_TIMEOUT'
   | 'UPSTREAM_ERROR'
   | 'SERVICE_UNAVAILABLE'
+  | 'SYNC_UNAVAILABLE'
+  | 'SYNC_STORAGE_ERROR'
+  | 'USERNAME_TAKEN'
+  | 'AUTH_REQUIRED'
+  | 'INVALID_CREDENTIALS'
+  | 'BAD_ORIGIN'
+  | 'SYNC_TOO_LARGE'
   | 'INTERNAL_ERROR';
 
 export class HttpError extends Error {

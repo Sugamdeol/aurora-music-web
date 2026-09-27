@@ -8,6 +8,7 @@ import { useLibraryStore } from './store/library';
 import { usePlaybackStore } from './store/playback';
 import { useRoomStore } from './room/client';
 import type { AppearanceSettings } from './domain/media';
+import { currentSyncAccount, enableAutomaticSync, syncLibrary } from './lib/sync';
 
 const HomePage = lazy(() => import('./pages/HomePage').then((module) => ({ default: module.HomePage })));
 const SearchPage = lazy(() => import('./pages/SearchPage').then((module) => ({ default: module.SearchPage })));
@@ -31,6 +32,9 @@ export default function App() {
       try {
         // Library bootstrap owns the one-time legacy migration; consumers read only after it commits.
         await useLibraryStore.getState().bootstrap();
+        try {
+          if (await getSetting('sync.enabled', false) && await currentSyncAccount()) { await syncLibrary(); enableAutomaticSync(); }
+        } catch (error) { console.warn('Aurora account sync is temporarily unavailable:', error); }
         await Promise.all([usePlaybackStore.getState().bootstrap(), useRoomStore.getState().bootstrap()]);
         const complete = await getSetting('onboarding.complete', false).catch(() => false);
         const nameComplete = await getSetting('onboarding.name.complete', false).catch(() => false);
