@@ -84,7 +84,7 @@ export function PlayerDock() {
     </button>
     <div className="dock-transport">
       <PlaybackControls />
-      <div className="dock-timeline mini-progress-rail">
+      <div className="dock-timeline">
         <span>{formatDuration(position)}</span>
         <input className="dock-seek" type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} disabled={!duration} onChange={(event) => { usePlaybackStore.getState().seek(Number(event.target.value)); useRoomStore.getState().broadcastPlayback('seek'); }} aria-label="Track progress" aria-valuetext={`${formatDuration(position)} of ${formatDuration(duration)}`} style={{ '--progress': `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%` } as React.CSSProperties} />
         <span>{formatDuration(duration)}</span>

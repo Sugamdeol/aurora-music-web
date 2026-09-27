@@ -93,7 +93,8 @@ describe('player controls', () => {
     usePlaybackStore.setState({ currentTrack: tracks[0], duration: 240, position: 60 });
     const { container } = render(<PlayerDock />);
     expect(screen.getAllByRole('slider', { name: 'Track progress' })).toHaveLength(1);
-    expect(container.querySelectorAll('.mini-progress-rail')).toHaveLength(1);
+    expect(container.querySelectorAll('.dock-timeline')).toHaveLength(1);
+    expect(container.querySelector('.dock-timeline')).not.toHaveClass('mini-progress-rail');
     fireEvent.change(screen.getByRole('slider', { name: 'Track progress' }), { target: { value: '90' } });
     expect(usePlaybackStore.getState().position).toBe(90);
   });
