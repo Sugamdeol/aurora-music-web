@@ -33,9 +33,38 @@ describe('song extraction', () => {
     expect(args).toContain('--force-ipv4');
     expect(args.slice(args.indexOf('--socket-timeout'), args.indexOf('--socket-timeout') + 2)).toEqual(['--socket-timeout', '10']);
     expect(args).toContain('--js-runtimes');
-    expect(args).toContain('--remote-components');
+    expect(args).not.toContain('--remote-components');
     await extractor.getAudioFormat('mhSpdlCXU7M');
     expect(execFile).toHaveBeenCalledTimes(1);
+  });
+  it('lets a tapped song interrupt an unrelated background warm', async () => {
+    let backgroundSignal: AbortSignal | undefined;
+    execFile.mockImplementation((_command, args, options, callback) => {
+      if (args.some((arg: string) => arg.includes('watch?v=background'))) {
+        backgroundSignal = options.signal;
+        options.signal.addEventListener('abort', () => callback(new Error('cancelled'), '', ''), { once: true });
+      } else callback(null, JSON.stringify({ url: 'https://r1.googlevideo.com/audio', ext: 'm4a' }), '');
+    });
+    const extractor = new YtDlpService();
+    const warm = extractor.warmAudioFormat('background');
+    const selected = extractor.getAudioFormat('selected');
+    await expect(selected).resolves.toMatchObject({ mimeType: 'audio/mp4' });
+    await expect(warm).resolves.toBeUndefined();
+    expect(backgroundSignal?.aborted).toBe(true);
+    expect(execFile).toHaveBeenCalledTimes(2);
+  });
+  it('promotes a queued warm when that song is selected', async () => {
+    execFile.mockImplementation((_command, args, options, callback) => {
+      if (args.some((arg: string) => arg.includes('watch?v=background'))) {
+        options.signal.addEventListener('abort', () => callback(new Error('cancelled'), '', ''), { once: true });
+      } else callback(null, JSON.stringify({ url: 'https://r1.googlevideo.com/audio', ext: 'm4a' }), '');
+    });
+    const extractor = new YtDlpService();
+    const oldWarm = extractor.warmAudioFormat('background');
+    const newWarm = extractor.warmAudioFormat('selected');
+    await expect(extractor.getAudioFormat('selected')).resolves.toMatchObject({ mimeType: 'audio/mp4' });
+    await Promise.all([oldWarm, newWarm]);
+    expect(execFile).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -63,7 +63,7 @@ function commandSpec(): CommandSpec {
   return { command: 'yt-dlp', prefix: [], label: 'yt-dlp' };
 }
 
-function run(command: string, args: readonly string[], timeout: number): Promise<ExecResult> {
+function run(command: string, args: readonly string[], timeout: number, signal?: AbortSignal): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     execFile(command, [...args], {
       encoding: 'utf8',
@@ -71,6 +71,7 @@ function run(command: string, args: readonly string[], timeout: number): Promise
       maxBuffer: MAX_OUTPUT_BYTES,
       windowsHide: true,
       shell: false,
+      signal,
       // YouTube's solver needs more than 96 MB even for a single audio track.
       // Extraction stays serialized so this budget is used by one job at a time.
       env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=160' },
@@ -139,6 +140,7 @@ function errorReason(error: unknown): string {
 export class YtDlpService implements AudioExtractor {
   private readonly formats = new Map<string, CacheEntry>();
   private readonly inFlight = new Map<string, Promise<AudioFormat>>();
+  private readonly warmings = new Map<string, AbortController>();
   private statusCache?: { value: YtDlpStatus; expiresAt: number };
   private statusPromise?: Promise<YtDlpStatus>;
 
@@ -178,6 +180,8 @@ export class YtDlpService implements AudioExtractor {
     const key = `${id}:${quality}`;
     const cached = this.formats.get(key);
     if (!refresh && cached && cached.expiresAt > Date.now()) return cached.format;
+    // Keep speculative work from delaying the song the listener just selected.
+    for (const [warmKey, controller] of this.warmings) if (warmKey !== key) controller.abort();
     const existing = this.inFlight.get(key);
     if (existing) return existing;
 
@@ -193,12 +197,20 @@ export class YtDlpService implements AudioExtractor {
     const key = `${id}:${quality}`;
     if (this.formats.get(key)?.expiresAt && this.formats.get(key)!.expiresAt > Date.now()) return;
     if (this.inFlight.has(key)) { await this.inFlight.get(key); return; }
-    const operation = extractionQueue.run(() => this.extract(id, quality), 'background');
+    const controller = new AbortController();
+    this.warmings.set(key, controller);
+    const operation = extractionQueue.run(() => this.extract(id, quality, controller.signal), 'background');
     this.inFlight.set(key, operation);
-    try { await operation; } finally { if (this.inFlight.get(key) === operation) this.inFlight.delete(key); }
+    try { await operation; }
+    catch (error) { if (!controller.signal.aborted) throw error; }
+    finally {
+      if (this.inFlight.get(key) === operation) this.inFlight.delete(key);
+      if (this.warmings.get(key) === controller) this.warmings.delete(key);
+    }
   }
 
-  private async extract(id: string, quality: AudioQuality): Promise<AudioFormat> {
+  private async extract(id: string, quality: AudioQuality, signal?: AbortSignal): Promise<AudioFormat> {
+    signal?.throwIfAborted();
     const spec = commandSpec();
     const watchUrl = `https://www.youtube.com/watch?v=${id}`;
     const cookieFile = process.env.YT_DLP_COOKIE_FILE?.trim();
@@ -233,14 +245,12 @@ export class YtDlpService implements AudioExtractor {
         '1',
         '--js-runtimes',
         process.env.YT_DLP_JS_RUNTIME?.trim() || `node:${process.execPath}`,
-        '--remote-components',
-        'ejs:github',
         '--dump-single-json',
         '--format',
         formatSelector(quality),
         '--',
         watchUrl,
-      ], EXTRACTION_TIMEOUT_MS));
+      ], EXTRACTION_TIMEOUT_MS, signal));
     } finally {
       if (cookieTempDir) await rm(cookieTempDir, { recursive: true, force: true }).catch(() => undefined);
     }
