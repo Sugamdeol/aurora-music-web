@@ -61,6 +61,7 @@ export function PlayerDock() {
   const openSheet = usePlaybackStore((state) => state.openSheet);
   const liked = useLibraryStore((state) => Boolean(track && state.likedIds.has(track.id)));
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
+  const consumedSwipe = useRef(false);
 
   if (!track) return null;
   const gestureEnd = (event: React.PointerEvent) => {
@@ -69,20 +70,23 @@ export function PlayerDock() {
     if (!start) return;
     const dx = event.clientX - start.x;
     const dy = event.clientY - start.y;
-    if (dy < -45 && Math.abs(dy) > Math.abs(dx)) openFull(true);
-    else if (dx < -55) usePlaybackStore.getState().next();
-    else if (dx > 55) usePlaybackStore.getState().previous();
+    if (dy < -45 && Math.abs(dy) > Math.abs(dx)) { consumedSwipe.current = true; openFull(true); }
+    else if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy)) {
+      consumedSwipe.current = true;
+      if (dx < 0) usePlaybackStore.getState().next();
+      else usePlaybackStore.getState().previous();
+    }
   };
   return <aside className="player-dock glass-surface" aria-label="Now playing">
-    <button className="dock-track" onClick={() => openFull(true)} onPointerDown={(event) => { pointerStart.current = { x: event.clientX, y: event.clientY }; }} onPointerUp={gestureEnd}>
+    <button className="dock-track" onClick={() => { if (consumedSwipe.current) { consumedSwipe.current = false; return; } openFull(true); }} onPointerDown={(event) => { consumedSwipe.current = false; pointerStart.current = { x: event.clientX, y: event.clientY }; }} onPointerUp={gestureEnd} onPointerCancel={() => { pointerStart.current = null; }}>
       <Artwork src={track.artwork} title={track.title} />
       <span><strong>{track.title}</strong><small>{track.artist}</small></span>
     </button>
     <div className="dock-transport">
       <PlaybackControls />
-      <div className="dock-timeline">
+      <div className="dock-timeline mini-progress-rail">
         <span>{formatDuration(position)}</span>
-        <input className="dock-seek" type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} disabled={!duration} onChange={(event) => { usePlaybackStore.getState().seek(Number(event.target.value)); useRoomStore.getState().broadcastPlayback('seek'); }} aria-label="Seek in track" aria-valuetext={`${formatDuration(position)} of ${formatDuration(duration)}`} style={{ '--progress': `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%` } as React.CSSProperties} />
+        <input className="dock-seek" type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} disabled={!duration} onChange={(event) => { usePlaybackStore.getState().seek(Number(event.target.value)); useRoomStore.getState().broadcastPlayback('seek'); }} aria-label="Track progress" aria-valuetext={`${formatDuration(position)} of ${formatDuration(duration)}`} style={{ '--progress': `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%` } as React.CSSProperties} />
         <span>{formatDuration(duration)}</span>
       </div>
     </div>

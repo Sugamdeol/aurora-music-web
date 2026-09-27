@@ -38,9 +38,18 @@ interface ExecResult {
 }
 
 export interface AudioExtractor {
-  getAudioFormat(id: string, refresh?: boolean): Promise<AudioFormat>;
+  getAudioFormat(id: string, refresh?: boolean, quality?: AudioQuality): Promise<AudioFormat>;
+  warmAudioFormat?(id: string, quality?: AudioQuality): Promise<void>;
   readiness(force?: boolean): Promise<YtDlpStatus>;
   invalidate(id: string): void;
+}
+
+export type AudioQuality = 'auto' | 'high' | 'data-saver';
+
+export function formatSelector(quality: AudioQuality): string {
+  if (quality === 'high') return 'bestaudio[abr>=128]/bestaudio[ext=m4a]/bestaudio';
+  if (quality === 'data-saver') return 'bestaudio[abr<=64]/bestaudio[abr<=96]/worstaudio';
+  return 'bestaudio[ext=m4a]/bestaudio';
 }
 
 function commandSpec(): CommandSpec {
@@ -134,7 +143,7 @@ export class YtDlpService implements AudioExtractor {
   private statusPromise?: Promise<YtDlpStatus>;
 
   invalidate(id: string): void {
-    this.formats.delete(id);
+    for (const key of this.formats.keys()) if (key.startsWith(`${id}:`)) this.formats.delete(key);
   }
 
   async readiness(force = false): Promise<YtDlpStatus> {
@@ -165,21 +174,31 @@ export class YtDlpService implements AudioExtractor {
     return operation;
   }
 
-  async getAudioFormat(id: string, refresh = false): Promise<AudioFormat> {
-    const cached = this.formats.get(id);
+  async getAudioFormat(id: string, refresh = false, quality: AudioQuality = 'auto'): Promise<AudioFormat> {
+    const key = `${id}:${quality}`;
+    const cached = this.formats.get(key);
     if (!refresh && cached && cached.expiresAt > Date.now()) return cached.format;
-    const existing = this.inFlight.get(id);
+    const existing = this.inFlight.get(key);
     if (existing) return existing;
 
-    if (refresh) this.formats.delete(id);
-    const operation = extractionQueue.run(() => this.extract(id)).finally(() => {
-      if (this.inFlight.get(id) === operation) this.inFlight.delete(id);
+    if (refresh) this.formats.delete(key);
+    const operation = extractionQueue.run(() => this.extract(id, quality)).finally(() => {
+      if (this.inFlight.get(key) === operation) this.inFlight.delete(key);
     });
-    this.inFlight.set(id, operation);
+    this.inFlight.set(key, operation);
     return operation;
   }
 
-  private async extract(id: string): Promise<AudioFormat> {
+  async warmAudioFormat(id: string, quality: AudioQuality = 'auto'): Promise<void> {
+    const key = `${id}:${quality}`;
+    if (this.formats.get(key)?.expiresAt && this.formats.get(key)!.expiresAt > Date.now()) return;
+    if (this.inFlight.has(key)) { await this.inFlight.get(key); return; }
+    const operation = extractionQueue.run(() => this.extract(id, quality), 'background');
+    this.inFlight.set(key, operation);
+    try { await operation; } finally { if (this.inFlight.get(key) === operation) this.inFlight.delete(key); }
+  }
+
+  private async extract(id: string, quality: AudioQuality): Promise<AudioFormat> {
     const spec = commandSpec();
     const watchUrl = `https://www.youtube.com/watch?v=${id}`;
     const cookieFile = process.env.YT_DLP_COOKIE_FILE?.trim();
@@ -218,7 +237,7 @@ export class YtDlpService implements AudioExtractor {
         'ejs:github',
         '--dump-single-json',
         '--format',
-        'bestaudio[ext=m4a]/bestaudio',
+        formatSelector(quality),
         '--',
         watchUrl,
       ], EXTRACTION_TIMEOUT_MS));
@@ -251,7 +270,7 @@ export class YtDlpService implements AudioExtractor {
       const oldest = this.formats.keys().next().value;
       if (oldest) this.formats.delete(oldest);
     }
-    this.formats.set(id, { format, expiresAt: cacheExpiry(format.url) });
+    this.formats.set(`${id}:${quality}`, { format, expiresAt: cacheExpiry(format.url) });
     return format;
   }
 }

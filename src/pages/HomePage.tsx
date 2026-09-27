@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -81,6 +81,14 @@ export function HomePage() {
   const discoveryTracks = useMemo(() => discovery.data?.flatMap((section) => section.items).filter((item): item is MediaTrack => 'source' in item) ?? [], [discovery.data]);
   const familiar = useMemo(() => uniqueTracks([...liked, ...recent, ...(library.data?.topTracks ?? []), ...youtubeLikes]).slice(0, 20), [liked, recent, library.data?.topTracks, youtubeLikes]);
   const mix = useMemo(() => dailyMix(familiar, personal.data?.length ? personal.data : discoveryTracks, Math.floor(dayStart / 86_400_000)), [familiar, personal.data, discoveryTracks, dayStart]);
+  useEffect(() => {
+    const first = mix[0];
+    if (!first || first.source !== 'remote') return;
+    const timer = window.setTimeout(() => {
+      void api.warmStream(first, useLibraryStore.getState().playbackSettings.preferredQuality).catch(() => undefined);
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [mix]);
   const signature = `${dateKey}:${mix.map((track) => track.id).join(',')}`;
   const saved = saveState.signature === signature ? saveState : undefined;
   const play = (tracks: MediaTrack[], label: string) => { if (tracks.length) usePlaybackStore.getState().playTracks(tracks, 0, label); };

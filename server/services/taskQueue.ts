@@ -5,7 +5,7 @@ export class TaskQueue {
   private active = 0;
   private waiting: Array<() => void> = [];
   constructor(private readonly concurrency: number, private readonly maxWaiting = 8, private readonly waitMs = 45_000) {}
-  async run<T>(task: () => Promise<T>): Promise<T> {
+  async run<T>(task: () => Promise<T>, priority: 'normal' | 'background' = 'normal'): Promise<T> {
     if (this.active >= this.concurrency) {
       if (this.waiting.length >= this.maxWaiting) throw new HttpError(503, 'SERVICE_UNAVAILABLE', 'The music server is busy. Please retry in a moment.');
       await new Promise<void>((resolve, reject) => {
@@ -15,7 +15,13 @@ export class TaskQueue {
           reject(new HttpError(503, 'SERVICE_UNAVAILABLE', 'The music server is busy. Please retry in a moment.'));
         }, this.waitMs);
         timer.unref?.();
-        this.waiting.push(start);
+        if (priority === 'normal') {
+          const firstBackground = this.waiting.findIndex((item) => (item as typeof start & { background?: boolean }).background);
+          this.waiting.splice(firstBackground < 0 ? this.waiting.length : firstBackground, 0, start);
+        } else {
+          (start as typeof start & { background?: boolean }).background = true;
+          this.waiting.push(start);
+        }
       });
     } else this.active += 1;
     try { return await task(); }

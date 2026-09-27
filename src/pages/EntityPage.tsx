@@ -22,6 +22,7 @@ export function EntityPage({ forcedKind, local: isLocal = false }: { forcedKind?
   const localPlaylist = localId ? playlists.find((playlist) => playlist.id === localId) : undefined;
   const deletePlaylist = useLibraryStore((state) => state.deletePlaylist);
   const [editing, setEditing] = useState(false);
+  const [shareMessage, setShareMessage] = useState('');
   const query = useQuery({ queryKey: ['entity', kind, id], queryFn: ({ signal }) => api.entity(kind, id, signal), enabled: Boolean(id) && !localId, staleTime: 5 * 60_000, retry: 1 });
 
   const detail = useMemo<EntityDetail | undefined>(() => localPlaylist ? {
@@ -35,6 +36,20 @@ export function EntityPage({ forcedKind, local: isLocal = false }: { forcedKind?
     const queue = shuffle ? shuffledTracks(tracks) : tracks;
     usePlaybackStore.getState().playTracks(queue, 0, detail?.title || 'Collection');
   };
+  const sharePlaylist = async () => {
+    if (!localPlaylist) return;
+    const playlist = { ...localPlaylist, tracks: localPlaylist.tracks.filter((track) => track.source === 'remote') };
+    const file = new File([JSON.stringify({ format: 'aurora-library', version: 3, exportedAt: new Date().toISOString(), playlists: [playlist] }, null, 2)], `${playlist.name.replace(/[^a-z0-9-]/gi, '-').slice(0, 48) || 'aurora-playlist'}.json`, { type: 'application/json' });
+    try {
+      if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: playlist.name });
+      else {
+        const url = URL.createObjectURL(file);
+        const link = document.createElement('a'); link.href = url; link.download = file.name; link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setShareMessage('Playlist downloaded. Send the file and import it on another device in Settings.');
+      }
+    } catch (error) { if ((error as Error).name !== 'AbortError') setShareMessage('Could not share this playlist. Try again.'); }
+  };
 
   if (query.isLoading && !localId) return <div className="page entity-page"><Skeleton className="entity-hero-skeleton" /><div className="song-list">{[1, 2, 3, 4].map((item) => <Skeleton key={item} className="row-skeleton" />)}</div></div>;
   if (query.isError) return <div className="page entity-page"><button className="back-button" onClick={() => navigate(-1)}><Icon name="arrow-left" /> Back</button><ErrorState message={query.error instanceof Error ? query.error.message : 'This page could not be loaded.'} retry={() => void query.refetch()} /></div>;
@@ -46,9 +61,10 @@ export function EntityPage({ forcedKind, local: isLocal = false }: { forcedKind?
       <div className="entity-ambient" style={detail.artwork ? { backgroundImage: `url("${detail.artwork.replace(/"/g, '%22')}")` } : undefined} />
       <Artwork className="entity-artwork" src={detail.artwork} title={detail.title} rounded={detail.kind === 'artist'} />
       <div className="entity-copy"><span>{detail.kind === 'artist' ? 'Artist' : detail.kind === 'album' ? 'Album' : localId ? 'Your playlist' : 'Playlist'}</span><h1>{detail.title}</h1>{detail.subtitle && <p className="entity-subtitle">{detail.subtitle}</p>}{detail.description && <p className="entity-description">{detail.description}</p>}<small>{tracks.length} {tracks.length === 1 ? 'track' : 'tracks'}</small>
-        <div className="entity-actions"><button className="primary-button" onClick={() => play()} disabled={!tracks.length}><Icon name="play" size={17} /> Play</button><button className="secondary-button" onClick={() => play(true)} disabled={!tracks.length}><Icon name="shuffle" size={17} /> Shuffle</button>{localId && localPlaylist && <button className="icon-danger" onClick={() => { if (window.confirm(`Delete “${localPlaylist.name}”?`)) { void deletePlaylist(localPlaylist.id).then(() => navigate('/library?tab=playlists')); } }} aria-label="Delete playlist"><Icon name="trash" /></button>}</div>
+        <div className="entity-actions"><button className="primary-button" onClick={() => play()} disabled={!tracks.length}><Icon name="play" size={17} /> Play</button><button className="secondary-button" onClick={() => play(true)} disabled={!tracks.length}><Icon name="shuffle" size={17} /> Shuffle</button>{localId && localPlaylist && <button className="secondary-button" onClick={() => void sharePlaylist()}><Icon name="share" size={17} /> Share playlist</button>}{localId && localPlaylist && <button className="icon-danger" onClick={() => { if (window.confirm(`Delete “${localPlaylist.name}”?`)) { void deletePlaylist(localPlaylist.id).then(() => navigate('/library?tab=playlists')); } }} aria-label="Delete playlist"><Icon name="trash" /></button>}</div>
       </div>
     </section>
+    {shareMessage && <p role="status" className="transition-note">{shareMessage}</p>}
 
     {localPlaylist && <div className="playlist-edit-entry"><button className="secondary-button" onClick={() => setEditing((value) => !value)}><Icon name="sliders" size={16} />{editing ? 'Done editing' : 'Edit playlist and song order'}</button></div>}
     {editing && localPlaylist && <PlaylistEditor key={localPlaylist.id} playlist={localPlaylist} onClose={() => setEditing(false)} />}

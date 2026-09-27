@@ -10,7 +10,7 @@ import {
   normalizeSections,
   normalizeSuggestions,
 } from '../normalizers.js';
-import { isAllowedMediaUrl, type AudioExtractor } from '../services/ytdlp.js';
+import { isAllowedMediaUrl, type AudioExtractor, type AudioQuality } from '../services/ytdlp.js';
 import { fetchLyrics } from '../services/lyrics.js';
 import type { MusicProvider } from '../services/youtube.js';
 import {
@@ -319,8 +319,22 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
     res.set('Cache-Control', 'private, max-age=900').json(result ?? { lines: [], provider: '', synced: false });
   }));
 
+  const requestedQuality = (value: unknown): AudioQuality =>
+    value === 'high' || value === 'data-saver' ? value : 'auto';
+
+  // Resolve the upcoming song while the current one plays. This only warms
+  // the short-lived signed URL; it does not download or cache the audio.
+  router.get('/stream-warm/:id', limiter(30, 15 * 60_000), asyncHandler(async (req, res) => {
+    const { id } = parseWith(trackParamsSchema, req.params);
+    const quality = requestedQuality(req.query.quality);
+    if (audio.warmAudioFormat) await audio.warmAudioFormat(id, quality);
+    else await audio.getAudioFormat(id, false, quality);
+    res.set('Cache-Control', 'no-store').status(204).end();
+  }));
+
   router.get('/stream/:id', limiter(90, 15 * 60_000), asyncHandler(async (req, res) => {
     const { id } = parseWith(trackParamsSchema, req.params);
+    const quality = requestedQuality(req.query.quality);
     const range = req.headers.range;
     if (range) {
       const result = rangeHeaderSchema.safeParse(range);
@@ -335,7 +349,7 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
     try {
       let upstream: Response | undefined;
       for (let attempt = 0; attempt < 2; attempt += 1) {
-        const format = await audio.getAudioFormat(id, attempt > 0);
+        const format = quality === 'auto' ? await audio.getAudioFormat(id, attempt > 0) : await audio.getAudioFormat(id, attempt > 0, quality);
         const headers = new Headers(format.httpHeaders);
         if (range) headers.set('Range', range);
 

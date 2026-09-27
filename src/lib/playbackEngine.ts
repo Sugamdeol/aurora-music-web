@@ -38,6 +38,7 @@ export class PlaybackEngine {
   private lastListenPosition?: number;
   private pendingListenSeconds = 0;
   private suggestionsKey = '';
+  private lastWarmKey = '';
   private destroyed = false;
   private eventsBound = false;
 
@@ -150,6 +151,7 @@ export class PlaybackEngine {
       if (key !== this.currentKey) return;
     }
     const liveState = usePlaybackStore.getState();
+    this.warmUpcoming(liveState);
     void this.prepareNext();
     if (liveState.autoplayEligible && liveState.queue.length === 1 && liveState.currentTrack?.source !== 'local') {
       void this.seedSuggestions(liveState.currentTrack!, `${liveState.currentTrack!.id}:${liveState.sourceRevision}`);
@@ -173,6 +175,17 @@ export class PlaybackEngine {
     if (liveState.currentTrack !== previous.currentTrack) this.updateMediaSession(liveState.currentTrack);
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = liveState.isPlaying ? 'playing' : 'paused';
     if (liveState.position !== previous.position || liveState.duration !== previous.duration || liveState.playbackRate !== previous.playbackRate) this.updatePositionState();
+  }
+
+  private warmUpcoming(state: StoreState): void {
+    if (!state.isPlaying || !state.currentTrack || state.shuffle || state.repeat === 'one') return;
+    const next = state.queue[state.currentIndex + 1] ?? (state.repeat === 'all' ? state.queue[0] : undefined);
+    if (!next || next.source !== 'remote') return;
+    const quality = useLibraryStore.getState().playbackSettings.preferredQuality;
+    const key = `${state.currentTrack.id}:${state.currentIndex}:${next.id}:${quality}`;
+    if (key === this.lastWarmKey) return;
+    this.lastWarmKey = key;
+    void api.warmStream(next, quality).catch(() => undefined);
   }
 
   private async loadTrack(track: MediaTrack, revision: number): Promise<void> {

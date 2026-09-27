@@ -3,6 +3,17 @@ import { describe, expect, it } from 'vitest';
 import { TaskQueue } from '../server/services/taskQueue';
 
 describe('bounded server work', () => {
+  it('runs a playback request before queued background preparation', async () => {
+    const queue = new TaskQueue(1);
+    let release!: () => void;
+    const order: string[] = [];
+    const first = queue.run(() => new Promise<void>((resolve) => { release = resolve; }));
+    const background = queue.run(async () => { order.push('background'); }, 'background');
+    const playback = queue.run(async () => { order.push('playback'); });
+    release();
+    await Promise.all([first, background, playback]);
+    expect(order).toEqual(['playback', 'background']);
+  });
   it('runs extraction one at a time and releases the slot even on failure', async () => {
     const queue = new TaskQueue(1, 2);
     let release!: () => void;

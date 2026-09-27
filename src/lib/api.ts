@@ -125,6 +125,12 @@ async function requestJson(paths: string[], init: RequestInit = {}): Promise<unk
 }
 
 export const api = {
+  async warmStream(track: MediaTrack, quality: 'auto' | 'high' | 'data-saver' = 'auto'): Promise<void> {
+    if (track.source !== 'remote' || track.streamUrl) return;
+    const suffix = quality === 'auto' ? '' : `?quality=${encodeURIComponent(quality)}`;
+    const response = await fetch(`/api/v1/stream-warm/${encodeURIComponent(track.id)}${suffix}`, { cache: 'no-store' });
+    if (!response.ok) throw new ApiError('Could not prepare this song.', response.status);
+  },
   async health(signal?: AbortSignal): Promise<boolean> {
     try {
       const body = asRecord(await requestJson(['/api/v1/health', '/api/health'], { signal }));

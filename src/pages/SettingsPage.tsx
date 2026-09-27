@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AppearanceSettings, CapabilitySnapshot, MediaTrack, PlaybackSettings } from '../domain/media';
-import { db } from '../lib/db';
+import { db, type HistoryRecord } from '../lib/db';
 import { useLibraryStore } from '../store/library';
 import { PageHeader } from '../components/primitives';
 import { Icon } from '../components/Icon';
@@ -56,12 +56,16 @@ export function SettingsPage() {
     void setRoomPreferences({ username });
   };
   const patchAppearance = (patch: Partial<AppearanceSettings>) => void updateAppearance(patch);
-  const exportLibrary = () => {
+  const exportLibrary = async () => {
+    const history = await db.history.toArray();
+    const tracks = (await db.tracks.toArray()).filter((track) => track.source === 'remote');
+    const remoteIds = new Set(tracks.map((track) => track.id));
     const data = {
-      format: 'aurora-library', version: 2, exportedAt: new Date().toISOString(),
+      format: 'aurora-library', version: 3, exportedAt: new Date().toISOString(),
       liked: likedTracks.filter((track) => track.source === 'remote'),
       recent: recent.filter((track) => track.source === 'remote'),
       playlists: playlists.map((playlist) => ({ ...playlist, tracks: playlist.tracks.filter((track) => track.source === 'remote') })),
+      tracks, history: history.filter((item) => remoteIds.has(item.trackId)).map(({ id: _id, ...item }) => item),
       appearance, playback,
       note: localTracks.length ? `${localTracks.length} local audio files were not included.` : undefined,
     };
@@ -78,7 +82,30 @@ export function SettingsPage() {
       const liked = Array.isArray(data.liked) ? data.liked as MediaTrack[] : [];
       for (const track of liked) if (track?.id && !useLibraryStore.getState().likedIds.has(track.id)) await toggleLike(track);
       const restoredRecent = Array.isArray(data.recent) ? data.recent as MediaTrack[] : [];
-      for (const track of [...restoredRecent].reverse()) if (track?.id) await recordPlay(track);
+      const history = Array.isArray(data.history) ? data.history as HistoryRecord[] : [];
+      if (Array.isArray(data.tracks) && Number(data.version) >= 3) {
+        const remoteTracks = (data.tracks as MediaTrack[]).filter((track) => track?.id && track.source === 'remote');
+        const byId = new Map(remoteTracks.map((track) => [track.id, track]));
+        await db.transaction('rw', db.history, db.tracks, async () => {
+          const existingHistory = await db.history.toArray();
+          const seen = new Set(existingHistory.map((item) => `${item.trackId}:${item.playedAt}`));
+          const imported = history.filter((item) => {
+            const key = `${item.trackId}:${item.playedAt}`;
+            if (!byId.has(item.trackId) || !Number.isFinite(item.playedAt) || item.playedAt <= 0 || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          await db.history.bulkAdd(imported.map(({ id: _id, ...item }) => item));
+          for (const track of remoteTracks) {
+            const existing = await db.tracks.get(track.id);
+            const plays = imported.filter((item) => item.trackId === track.id);
+            await db.tracks.put({ ...track, ...existing, playCount: (existing?.playCount ?? 0) + plays.length, lastPlayedAt: Math.max(existing?.lastPlayedAt ?? 0, ...plays.map((item) => item.playedAt)) || undefined });
+          }
+        });
+        await useLibraryStore.getState().bootstrap();
+      } else {
+        for (const track of [...restoredRecent].reverse()) if (track?.id && track.source === 'remote') await recordPlay(track);
+      }
       for (const item of data.playlists as Array<{ name?: string; tracks?: MediaTrack[] }>) {
         const playlist = await createPlaylist(item.name || 'Imported playlist');
         for (const track of item.tracks ?? []) if (track?.id) await addToPlaylist(playlist.id, track);
@@ -128,7 +155,7 @@ export function SettingsPage() {
 
     <SettingsGroup title="Library and storage">
       <div className="setting-block"><span className="setting-glyph"><Icon name="folder" /></span><div><strong>Browser storage</strong><small>{storageText} · {localTracks.length} local files</small></div></div>
-      <button className="setting-block setting-action" onClick={exportLibrary}><span className="setting-glyph"><Icon name="download" /></span><div><strong>Export library</strong><small>Save playlists, liked songs, settings, and history metadata</small></div><Icon name="chevron-right" /></button>
+      <button className="setting-block setting-action" onClick={() => void exportLibrary().catch(() => setMessage('The library could not be exported.'))}><span className="setting-glyph"><Icon name="download" /></span><div><strong>Export library</strong><small>Save playlists, liked songs, settings, and listening history</small></div><Icon name="chevron-right" /></button>
       <button className="setting-block setting-action" onClick={() => importRef.current?.click()}><span className="setting-glyph"><Icon name="upload" /></span><div><strong>Import a backup</strong><small>Merge another Aurora library into this browser</small></div><Icon name="chevron-right" /><input ref={importRef} hidden type="file" accept="application/json,.json" onChange={importLibrary} /></button>
       <button className="setting-block setting-action danger-setting" onClick={() => void clearHistory()}><span className="setting-glyph"><Icon name="trash" /></span><div><strong>Clear listening history</strong><small>Keep liked songs, playlists, and local files</small></div><Icon name="chevron-right" /></button>
     </SettingsGroup>

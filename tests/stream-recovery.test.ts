@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../server/app';
-import { YtDlpService, type AudioExtractor } from '../server/services/ytdlp';
+import { YtDlpService, formatSelector, type AudioExtractor } from '../server/services/ytdlp';
 import type { MusicProvider } from '../server/services/youtube';
 
 const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
@@ -12,6 +12,17 @@ beforeEach(() => vi.clearAllMocks());
 afterEach(() => vi.unstubAllGlobals());
 
 describe('song extraction', () => {
+  it('selects distinct audio quality formats and reuses each signed URL independently', async () => {
+    execFile.mockImplementation((_command, _args, _options, callback) => {
+      callback(null, JSON.stringify({ url: 'https://r1.googlevideo.com/audio', ext: 'm4a' }), '');
+    });
+    const extractor = new YtDlpService();
+    await extractor.getAudioFormat('mhSpdlCXU7M', false, 'data-saver');
+    expect((execFile.mock.calls[0][1] as string[]).slice(-3, -2)).toEqual([formatSelector('data-saver')]);
+    await extractor.getAudioFormat('mhSpdlCXU7M', false, 'data-saver');
+    await extractor.getAudioFormat('mhSpdlCXU7M', false, 'high');
+    expect(execFile).toHaveBeenCalledTimes(2);
+  });
   it('uses IPv4, bounded network retries and an explicit JavaScript runtime', async () => {
     execFile.mockImplementation((_command, _args, _options, callback) => {
       callback(null, JSON.stringify({ url: 'https://r1.googlevideo.com/audio', ext: 'm4a' }), '');

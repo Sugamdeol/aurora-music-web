@@ -103,6 +103,15 @@ export function SearchPage() {
       : remote.data ?? [];
   }, [kind, localTracks, likedTracks, playlists, query, recent, remote.data, scope]);
   const tracks = results.filter((item): item is MediaTrack => 'source' in item);
+  useEffect(() => {
+    if (scope !== 'catalog' || kind !== 'song' || !remote.data?.length) return;
+    const first = remote.data.find((item): item is MediaTrack => 'source' in item);
+    if (!first) return;
+    const timer = window.setTimeout(() => {
+      void api.warmStream(first, useLibraryStore.getState().playbackSettings.preferredQuality).catch(() => undefined);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [remote.data, scope, kind]);
   const submit = (event: React.FormEvent) => { event.preventDefault(); setQuery(input.trim()); };
   const chooseCategory = (search: string) => { setScope('catalog'); setKind('song'); setInput(search); };
 
