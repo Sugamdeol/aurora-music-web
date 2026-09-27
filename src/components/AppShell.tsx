@@ -11,7 +11,7 @@ const primaryNav: Array<{ to: string; label: string; icon: IconName; end?: boole
   { to: '/', label: 'Home', icon: 'home', end: true },
   { to: '/search', label: 'Search', icon: 'search' },
   { to: '/explore', label: 'Explore', icon: 'sparkles' },
-  { to: '/ai', label: 'AI Mix', icon: 'sparkles' },
+  { to: '/ai', label: 'Studio', icon: 'sparkles' },
   { to: '/room', label: 'Together', icon: 'users' },
   { to: '/library', label: 'Library', icon: 'library' },
 ];
