@@ -4,6 +4,7 @@ import { mixGains, transitionDuration } from '../src/lib/songTransitions';
 import { usePlaybackStore } from '../src/store/playback';
 import { useLibraryStore } from '../src/store/library';
 import { useRoomStore } from '../src/room/client';
+import { api } from '../src/lib/api';
 import type { PlaybackEngine } from '../src/lib/playbackEngine';
 
 vi.mock('../src/lib/api', async (original) => ({ ...await original<typeof import('../src/lib/api')>(), streamCandidates: () => ['/test-audio'] }));
@@ -52,12 +53,44 @@ beforeEach(async () => {
 afterEach(() => {
   engine.stop();
   vi.useRealTimers();
+  vi.restoreAllMocks();
   useLibraryStore.setState({ recordPlay, recordListenTime });
   vi.unstubAllGlobals();
 });
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 
 describe('audio transitions', () => {
+  it('keeps adding unique songs after a playlist ends', async () => {
+    useLibraryStore.setState({ playbackSettings: { ...DEFAULT_PLAYBACK_SETTINGS, transitionMode: 'off', autoplay: true } });
+    const fourth = { ...tracks[0], id: 'four' };
+    const fifth = { ...tracks[0], id: 'five' };
+    vi.spyOn(api, 'related').mockImplementation(async (id) => id === 'two' ? [tracks[0], tracks[1], fourth] : id === 'four' ? [fifth] : []);
+    usePlaybackStore.getState().playTracks(tracks.slice(0, 2), 1, 'Playlist');
+    await settle();
+    expect(usePlaybackStore.getState().queue.map((track) => track.id)).toEqual(['one', 'two', 'four']);
+    expect(usePlaybackStore.getState().queue[2].recommended).toBe(true);
+    (engine.audio as unknown as AudioDeck).dispatchEvent(new Event('ended'));
+    await settle();
+    expect(usePlaybackStore.getState().currentTrack?.id).toBe('four');
+    await settle();
+    expect(usePlaybackStore.getState().queue.map((track) => track.id)).toEqual(['one', 'two', 'four', 'five']);
+    (engine.audio as unknown as AudioDeck).dispatchEvent(new Event('ended'));
+    await settle();
+    expect(usePlaybackStore.getState().currentTrack?.id).toBe('five');
+  });
+
+  it('keeps user queued songs ahead of pending recommendations', async () => {
+    useLibraryStore.setState({ playbackSettings: { ...DEFAULT_PLAYBACK_SETTINGS, transitionMode: 'off', autoplay: true } });
+    let resolve!: (tracks: MediaTrack[]) => void;
+    vi.spyOn(api, 'related').mockImplementation(() => new Promise((done) => { resolve = done; }));
+    usePlaybackStore.getState().playTracks([tracks[0]], 0, 'Single');
+    await settle();
+    usePlaybackStore.getState().addToQueue(tracks[1]);
+    resolve([tracks[2]]);
+    await settle();
+    expect(usePlaybackStore.getState().queue.map((track) => track.id)).toEqual(['one', 'two']);
+    expect(usePlaybackStore.getState().currentTrack?.id).toBe('one');
+  });
   it('uses separate Web Audio gains so fades work when mobile media volume is fixed', async () => {
     engine.stop();
     const deckGains: Array<{ gain: { value: number } }> = [];

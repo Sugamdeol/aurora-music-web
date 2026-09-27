@@ -48,6 +48,7 @@ interface PlaybackState {
   toggleShuffle: () => void;
   cycleRepeat: () => void;
   addToQueue: (track: MediaTrack, next?: boolean) => void;
+  appendRecommendations: (tracks: MediaTrack[], expectedTailId: string) => number;
   removeFromQueue: (index: number) => void;
   reorderQueue: (from: number, to: number) => void;
   clearQueue: () => void;
@@ -212,6 +213,22 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     const current = updateCurrent(queue, state.currentIndex < 0 ? 0 : state.currentIndex);
     set({ ...current, autoplayEligible: false });
     persist({ ...state, ...current });
+  },
+
+  appendRecommendations: (tracks, expectedTailId) => {
+    const state = get();
+    if (!state.queue.length || state.queue.at(-1)?.id !== expectedTailId) return 0;
+    const seen = new Set(state.queue.map((track) => track.id));
+    const newTracks = tracks.filter((track) => {
+      if (track.source !== 'remote' || seen.has(track.id)) return false;
+      seen.add(track.id);
+      return true;
+    }).slice(0, 20).map((track) => ({ ...track, recommended: true }));
+    if (!newTracks.length) return 0;
+    const queue = [...state.queue, ...newTracks];
+    set({ queue });
+    persist({ ...state, queue });
+    return newTracks.length;
   },
 
   removeFromQueue: (index) => {

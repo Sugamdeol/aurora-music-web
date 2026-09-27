@@ -39,7 +39,8 @@ export class PlaybackEngine {
   private historyRecordId?: number;
   private lastListenPosition?: number;
   private pendingListenSeconds = 0;
-  private suggestionsKey = '';
+  private recommendationRequest?: { key: string; promise: Promise<void> };
+  private recommendationAttemptKey = '';
   private lastWarmKey = '';
   private destroyed = false;
   private eventsBound = false;
@@ -141,6 +142,7 @@ export class PlaybackEngine {
         try { this.audio.currentTime = state.position; this.lastListenPosition = state.position; } catch { /* metadata not ready */ }
       }
       if (state.isPlaying && (state.duration - state.position) / state.playbackRate <= PREPARE_LEAD_SECONDS) void this.prepareNext();
+      if (state.isPlaying && state.queue.length - state.currentIndex === 1) void this.ensureUpcoming();
       this.updatePositionState();
       return;
     }
@@ -170,11 +172,9 @@ export class PlaybackEngine {
       if (key !== this.currentKey) return;
     }
     const liveState = usePlaybackStore.getState();
+    if (liveState.isPlaying) void this.ensureUpcoming();
     this.warmUpcoming(liveState);
     void this.prepareNext();
-    if (liveState.autoplayEligible && liveState.queue.length === 1 && liveState.currentTrack?.source !== 'local') {
-      void this.seedSuggestions(liveState.currentTrack!, `${liveState.currentTrack!.id}:${liveState.sourceRevision}`);
-    }
     if (Math.abs((this.audio.currentTime || 0) - liveState.position) > 1.25 && Number.isFinite(liveState.position)) {
       this.cancelFade();
       try { this.audio.currentTime = liveState.position; this.lastListenPosition = liveState.position; } catch { /* metadata may not be ready yet */ }
@@ -411,38 +411,45 @@ export class PlaybackEngine {
     const playback = usePlaybackStore.getState();
     const atQueueEnd = playback.currentIndex >= playback.queue.length - 1;
     const autoplay = useLibraryStore.getState().playbackSettings.autoplay;
-    if (!atQueueEnd || playback.repeat !== 'off' || !autoplay || !playback.autoplayEligible || !playback.currentTrack || playback.currentTrack.source === 'local') {
+    if (!atQueueEnd || playback.repeat !== 'off' || !autoplay || !playback.currentTrack || playback.currentTrack.source === 'local' || useRoomStore.getState().status === 'connected') {
       playback.next(true);
       return;
     }
-    const endedTrack = playback.currentTrack;
-    const requestRevision = playback.sourceRevision;
     playback.setStatus('loading');
-    try {
-      const related = (await api.related(endedTrack.id)).filter((track) => !playback.queue.some((queued) => queued.id === track.id));
-      const latest = usePlaybackStore.getState();
-      if (latest.currentTrack?.id !== endedTrack.id || latest.sourceRevision !== requestRevision) return;
-      if (related.length) latest.playTracks([endedTrack, ...related], 1, 'Aurora autoplay');
-      else latest.next(true);
-    } catch {
-      const latest = usePlaybackStore.getState();
-      if (latest.currentTrack?.id === endedTrack.id && latest.sourceRevision === requestRevision) latest.next(true);
-    }
+    await this.ensureUpcoming(true);
+    const latest = usePlaybackStore.getState();
+    if (latest.currentTrack?.id === playback.currentTrack.id && latest.sourceRevision === playback.sourceRevision && latest.isPlaying) latest.next(true);
   }
 
-  private async seedSuggestions(track: MediaTrack, key: string): Promise<void> {
-    if (this.suggestionsKey === key || !useLibraryStore.getState().playbackSettings.autoplay) return;
-    this.suggestionsKey = key;
-    try {
-      const related = await api.related(track.id);
-      const latest = usePlaybackStore.getState();
-      if (latest.currentTrack?.id !== track.id || latest.queue.length !== 1 || !latest.autoplayEligible) return;
-      const unique = related.filter((item, index) => item.id !== track.id && related.findIndex((candidate) => candidate.id === item.id) === index)
-        .map((item) => ({ ...item, recommended: true }));
-      unique.slice(0, 20).forEach((item) => usePlaybackStore.getState().addToQueue(item));
-    } catch {
-      // Keep the one-track queue playable when recommendations are unavailable.
-    }
+  private ensureUpcoming(atEnd = false): Promise<void> {
+    const state = usePlaybackStore.getState();
+    if (!state.isPlaying || state.repeat !== 'off' || !useLibraryStore.getState().playbackSettings.autoplay
+      || useRoomStore.getState().status === 'connected' || state.queue.length - state.currentIndex !== 1) return Promise.resolve();
+    const tail = state.queue.at(-1);
+    if (!tail || tail.source !== 'remote') return Promise.resolve();
+    const key = `${state.queue[0]?.id}:${tail.id}:${state.sourceRevision}`;
+    if (this.recommendationRequest?.key === key) return this.recommendationRequest.promise;
+    if (!atEnd && this.recommendationAttemptKey === key) return Promise.resolve();
+    this.recommendationAttemptKey = key;
+    const promise = (async () => {
+      const seen = new Set(state.queue.map((track) => track.id));
+      for (const seed of [tail, state.queue.at(-2)].filter((track): track is MediaTrack => Boolean(track && track.source === 'remote'))) {
+        try {
+          const related = (await api.related(seed.id)).filter((track) => track.source === 'remote' && !seen.has(track.id));
+          if (related.length) {
+            usePlaybackStore.getState().appendRecommendations(related, tail.id);
+            return;
+          }
+        } catch { /* Try another song or a music search. */ }
+      }
+      try {
+        const results = await api.search(`${tail.artist} songs`, 'song');
+        usePlaybackStore.getState().appendRecommendations(results.filter((item): item is MediaTrack => 'source' in item && !seen.has(item.id)), tail.id);
+      } catch { /* No online suggestions available; end this queue normally. */ }
+    })();
+    this.recommendationRequest = { key, promise };
+    void promise.finally(() => { if (this.recommendationRequest?.promise === promise) this.recommendationRequest = undefined; });
+    return promise;
   }
 
   private async handleSourceError(): Promise<void> {
