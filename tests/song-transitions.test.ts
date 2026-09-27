@@ -26,8 +26,10 @@ describe('transition planning', () => {
 });
 
 class AudioDeck extends EventTarget {
+  static instances: AudioDeck[] = [];
   src = ''; preload = ''; crossOrigin = ''; volume = 1; muted = false; playbackRate = 1;
   duration = 200; currentTime = 0; readyState = 4; paused = true; seeking = false; ended = false;
+  constructor() { super(); AudioDeck.instances.push(this); }
   load() { if (this.src) this.dispatchEvent(new Event('loadedmetadata')); }
   async play() { this.paused = false; this.dispatchEvent(new Event('playing')); }
   pause() { const wasPlaying = !this.paused; this.paused = true; if (wasPlaying) this.dispatchEvent(new Event('pause')); }
@@ -38,6 +40,7 @@ let engine: PlaybackEngine;
 const recordPlay = useLibraryStore.getState().recordPlay;
 const recordListenTime = useLibraryStore.getState().recordListenTime;
 beforeEach(async () => {
+  AudioDeck.instances = [];
   vi.stubGlobal('Audio', AudioDeck);
   usePlaybackStore.setState({ currentTrack: null, currentIndex: -1, queue: [], sourceRevision: 0, isPlaying: false, position: 0, duration: 0, repeat: 'off', shuffle: false, volume: .8, muted: false });
   useLibraryStore.setState({ playbackSettings: { ...DEFAULT_PLAYBACK_SETTINGS, transitionMode: 'crossfade', crossfadeSeconds: 6 }, recordPlay: vi.fn().mockResolvedValue(1), recordListenTime: vi.fn().mockResolvedValue(undefined) });
@@ -55,6 +58,72 @@ afterEach(() => {
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 
 describe('audio transitions', () => {
+  it('uses separate Web Audio gains so fades work when mobile media volume is fixed', async () => {
+    engine.stop();
+    const deckGains: Array<{ gain: { value: number } }> = [];
+    const node = () => ({ connect: vi.fn(), disconnect: vi.fn() });
+    class MobileAudioContext {
+      state = 'running'; currentTime = 0; destination = node();
+      createGain() { const gain = { ...node(), gain: { value: 1, setTargetAtTime: vi.fn() } }; deckGains.push(gain); return gain; }
+      createMediaElementSource() { return node(); }
+      createBiquadFilter() { return { ...node(), frequency: { value: 0 }, Q: { value: 0 }, gain: { setTargetAtTime: vi.fn() } }; }
+      createDynamicsCompressor() { return { ...node(), threshold: { value: 0 }, knee: { value: 0 }, ratio: { value: 0 }, attack: { value: 0 }, release: { value: 0 } }; }
+      async resume() { this.state = 'running'; }
+    }
+    vi.stubGlobal('AudioContext', MobileAudioContext);
+    const module = await import('../src/lib/playbackEngine');
+    engine = new module.PlaybackEngine();
+    engine.start();
+    vi.useFakeTimers();
+    usePlaybackStore.getState().playTracks(tracks);
+    await settle();
+    const outgoing = engine.audio as unknown as AudioDeck;
+    outgoing.tick(195);
+    await settle();
+    const incoming = engine.audio as unknown as AudioDeck;
+    incoming.tick(2.5);
+    vi.advanceTimersByTime(50);
+    expect(outgoing.volume).toBe(1);
+    expect(incoming.volume).toBe(1);
+    expect(deckGains[1].gain.value).toBeCloseTo(.8 * Math.SQRT1_2);
+    expect(deckGains.at(-1)!.gain.value).toBeCloseTo(.8 * Math.SQRT1_2);
+  });
+  it('Auto Mix blends unrelated songs and preserves the gap between album tracks', async () => {
+    useLibraryStore.setState({ playbackSettings: { ...DEFAULT_PLAYBACK_SETTINGS, transitionMode: 'automix' } });
+    usePlaybackStore.getState().playTracks(tracks);
+    await settle();
+    const outgoing = engine.audio as unknown as AudioDeck;
+    outgoing.tick(195);
+    await settle();
+    expect(engine.audio).not.toBe(outgoing);
+
+    usePlaybackStore.getState().playTracks([
+      { ...tracks[0], album: 'One album' },
+      { ...tracks[1], album: 'One album' },
+    ]);
+    await settle();
+    const albumTrack = engine.audio as unknown as AudioDeck;
+    albumTrack.tick(195);
+    await settle();
+    expect(engine.audio).toBe(albumTrack);
+  });
+  it('starts the fade when a slow next stream becomes playable inside the transition window', async () => {
+    usePlaybackStore.getState().playTracks(tracks);
+    await settle();
+    const outgoing = engine.audio as unknown as AudioDeck;
+    outgoing.tick(120);
+    await settle();
+    const incoming = AudioDeck.instances.at(-1)!;
+    expect(incoming).not.toBe(outgoing);
+    incoming.readyState = 1;
+    outgoing.tick(195);
+    await settle();
+    expect(engine.audio).toBe(outgoing);
+    incoming.readyState = 4;
+    incoming.dispatchEvent(new Event('canplay'));
+    await settle();
+    expect(engine.audio).toBe(incoming);
+  });
   it('blends both decks and releases the outgoing stream when the fade completes', async () => {
     vi.useFakeTimers();
     usePlaybackStore.getState().playTracks(tracks);

@@ -9,6 +9,7 @@ import { useRoomStore } from '../room/client';
 import { mixGains, transitionDuration } from './songTransitions';
 
 type StoreState = ReturnType<typeof usePlaybackStore.getState>;
+const PREPARE_LEAD_SECONDS = 90;
 
 export class PlaybackEngine {
   private activeAudio = new Audio();
@@ -20,6 +21,7 @@ export class PlaybackEngine {
   private audioContext?: AudioContext;
   private sourceNode?: GainNode;
   private deckNodes = new WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>();
+  private deckGains = new WeakMap<HTMLAudioElement, GainNode>();
   private roomUnsubscribe?: () => void;
   private prepared?: { audio: HTMLAudioElement; track: MediaTrack; index: number; candidates: string[]; sourceIndex: number; objectUrl?: string };
   private preparationKey = '';
@@ -90,7 +92,7 @@ export class PlaybackEngine {
       this.lastListenPosition = position;
       void this.maybeTransition();
     });
-    on('waiting', () => { this.cancelFade(); this.flushListenTime(); this.lastListenPosition = undefined; store().setStatus('loading'); });
+    on('waiting', () => { if (!this.fading) this.cancelFade(); this.flushListenTime(); this.lastListenPosition = undefined; store().setStatus('loading'); });
     on('canplay', () => store().setStatus(this.audio.paused ? 'ready' : 'playing'));
     on('playing', () => {
       store().setStatus('playing');
@@ -138,14 +140,14 @@ export class PlaybackEngine {
         this.cancelFade();
         try { this.audio.currentTime = state.position; this.lastListenPosition = state.position; } catch { /* metadata not ready */ }
       }
-      if (state.isPlaying && state.duration - state.position <= 45) void this.prepareNext();
+      if (state.isPlaying && (state.duration - state.position) / state.playbackRate <= PREPARE_LEAD_SECONDS) void this.prepareNext();
       this.updatePositionState();
       return;
     }
-    this.audio.volume = state.volume * (this.fading?.incomingGain ?? 1);
+    this.setDeckVolume(this.audio, state.volume * (this.fading?.incomingGain ?? 1));
     this.audio.muted = state.muted;
     this.audio.playbackRate = state.playbackRate;
-    if (this.fading) { this.fading.audio.volume = state.volume * this.fading.outgoingGain; this.fading.audio.muted = state.muted; }
+    if (this.fading) { this.setDeckVolume(this.fading.audio, state.volume * this.fading.outgoingGain); this.fading.audio.muted = state.muted; }
     if (!state.isPlaying) this.cancelFade();
     const key = state.currentTrack ? `${state.currentTrack.id}:${state.sourceRevision}` : '';
     if (key !== this.currentKey) {
@@ -238,13 +240,34 @@ export class PlaybackEngine {
     if (revision === this.loadRevision) this.updateMediaSession(track);
   }
 
+  private setDeckVolume(audio: HTMLAudioElement, volume: number): void {
+    const gain = this.deckGains.get(audio);
+    if (gain) {
+      // Some mobile browsers only expose device volume on media elements.
+      // Web Audio provides a reliable independent fader for each song.
+      audio.volume = 1;
+      gain.gain.value = volume;
+    } else audio.volume = volume;
+  }
+
   private connectDeck(audio: HTMLAudioElement): void {
     if (!this.audioContext || !this.sourceNode) return;
     let node = this.deckNodes.get(audio);
     if (!node) {
-      node = this.audioContext.createMediaElementSource(audio);
-      this.deckNodes.set(audio, node);
-      node.connect(this.sourceNode);
+      try {
+        node = this.audioContext.createMediaElementSource(audio);
+        this.deckNodes.set(audio, node);
+        const gain = this.audioContext.createGain();
+        gain.gain.value = audio.volume;
+        node.connect(gain);
+        gain.connect(this.sourceNode);
+        this.deckGains.set(audio, gain);
+        audio.volume = 1;
+      } catch {
+        // If creation failed after the element was routed into Web Audio,
+        // reconnect it directly so playback is still audible.
+        try { node?.connect(this.sourceNode); } catch { /* native audio can still play */ }
+      }
     }
   }
 
@@ -253,6 +276,7 @@ export class PlaybackEngine {
     audio.removeAttribute('src');
     audio.load();
     this.deckNodes.get(audio)?.disconnect();
+    this.deckGains.get(audio)?.disconnect();
     if (objectUrl) URL.revokeObjectURL(objectUrl);
   }
 
@@ -271,7 +295,7 @@ export class PlaybackEngine {
       if (this.preparationKey || this.prepared) this.clearPrepared();
       return;
     }
-    if (!this.prepared && (!state.isPlaying || !state.duration || (state.duration - state.position) / state.playbackRate > 45)) return;
+    if (!this.prepared && (!state.isPlaying || !state.duration || (state.duration - state.position) / state.playbackRate > PREPARE_LEAD_SECONDS)) return;
     const nextKey = state.shuffle ? state.queue.length : state.queue[state.currentIndex + 1]?.id ?? (state.repeat === 'all' ? state.queue[0]?.id : 'end');
     const key = `${this.currentKey}:${state.currentIndex}:${nextKey}:${state.shuffle}:${state.repeat}:${settings.transitionMode}:${settings.preferredQuality}:${Math.round(state.duration)}`;
     if (key === this.preparationKey) return;
@@ -304,6 +328,9 @@ export class PlaybackEngine {
     this.prepared = prepared;
     this.bindEvents(audio);
     this.connectDeck(audio);
+    audio.addEventListener('canplay', () => {
+      if (this.prepared === prepared) void this.maybeTransition();
+    });
     audio.addEventListener('error', () => {
       if (this.prepared !== prepared) return;
       if (prepared.sourceIndex + 1 < candidates.length) {
@@ -361,8 +388,8 @@ export class PlaybackEngine {
         fade.outgoingGain = outgoingGain;
         fade.incomingGain = incomingGain;
         const playback = usePlaybackStore.getState();
-        fade.audio.volume = playback.volume * outgoingGain;
-        this.audio.volume = playback.volume * incomingGain;
+        this.setDeckVolume(fade.audio, playback.volume * outgoingGain);
+        this.setDeckVolume(this.audio, playback.volume * incomingGain);
         if (progress >= 1 || fade.audio.ended) this.cancelFade();
       }, 50);
     } catch {
@@ -377,7 +404,7 @@ export class PlaybackEngine {
     const fade = this.fading;
     this.fading = undefined;
     if (fade) this.releaseDeck(fade.audio, fade.objectUrl);
-    this.audio.volume = usePlaybackStore.getState().volume;
+    this.setDeckVolume(this.audio, usePlaybackStore.getState().volume);
   }
 
   private async handleEnded(): Promise<void> {
