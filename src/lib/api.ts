@@ -137,12 +137,13 @@ export const api = {
     const body = asRecord(await requestJson(['/api/v1/ai/web'], { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'read', url }) }));
     return { url: asString(body.url), text: asString(body.text) };
   },
-  async aiMusic(prompt: string, mode: 'create' | 'extend' | 'discover', seeds: string[] = []): Promise<{ title: string; description: string; tracks: MediaTrack[] }> {
+  async aiMusic(prompt: string, mode: 'create' | 'extend' | 'discover', seeds: string[] = []): Promise<{ title: string; description: string; tracks: MediaTrack[]; ranking: 'typesafe' | 'catalog' }> {
     const body = asRecord(await requestJson(['/api/v1/ai/music'], { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, mode, seeds }) }));
     return {
       title: asString(body.title).slice(0, 64) || 'Your AI mix',
       description: asString(body.description).slice(0, 200),
       tracks: asArray(body.tracks).map((track) => normalizeMedia(track, 'song')).filter((track): track is MediaTrack => Boolean(track && 'source' in track && track.source === 'remote')),
+      ranking: asString(body.ranking) === 'typesafe' ? 'typesafe' : 'catalog',
     };
   },
   async warmStream(track: MediaTrack, quality: 'auto' | 'high' | 'data-saver' = 'auto'): Promise<void> {

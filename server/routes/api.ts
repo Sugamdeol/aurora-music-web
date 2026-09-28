@@ -13,6 +13,7 @@ import {
 import { isAllowedMediaUrl, type AudioExtractor, type AudioQuality } from '../services/ytdlp.js';
 import { fetchLyrics } from '../services/lyrics.js';
 import { generateMusicIdea } from '../services/ai.js';
+import { rerankMusicCandidates } from '../services/typesafe.js';
 import { readPublicPage, searchReference } from '../services/webTools.js';
 import type { MusicProvider } from '../services/youtube.js';
 import { z } from 'zod';
@@ -177,9 +178,13 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
       seeds: z.array(z.string().trim().min(1).max(120)).max(8).default([]),
     }), req.body);
     const idea = await generateMusicIdea(input.prompt, input.seeds, input.mode);
-    const tracks = await resolveAiQueries(idea.queries);
+    const candidates = await resolveAiQueries(idea.queries);
+    const { tracks, ranked } = await rerankMusicCandidates(input.prompt, candidates.map((track) => ({
+      id: String(track.id), title: String(track.title), artist: String(track.artist ?? ''),
+      ...(typeof track.album === 'string' ? { album: track.album } : {}),
+    })));
     if (!tracks.length) throw new HttpError(502, 'UPSTREAM_ERROR', 'No matching songs found. Try another mood or artist.');
-    res.set('Cache-Control', 'no-store').json({ ...idea, tracks });
+    res.set('Cache-Control', 'no-store').json({ ...idea, tracks, ranking: ranked ? 'typesafe' : 'catalog' });
   }));
 
   router.get('/account/youtube-music', asyncHandler(async (req, res) => {
