@@ -129,8 +129,9 @@ button:disabled { opacity:.42; cursor:not-allowed; }
 .artwork { position:relative;display:block;overflow:hidden;background:linear-gradient(145deg,#273226,#101510); }
 .artwork img { width:100%;height:100%;object-fit:cover; }
 .artwork-round { border-radius:50%!important; }
-.artwork-fallback { display:grid;width:100%;height:100%;place-items:center;color:var(--accent);background:radial-gradient(circle at 46% 35%,rgba(138,255,24,.14),transparent 48%),linear-gradient(145deg,#1e281c,#0e120e); }
-.artwork-fallback i { position:absolute;right:8px;bottom:5px;color:rgba(255,255,255,.14);font:800 22px Manrope,sans-serif;font-style:normal; }
+.artwork-fallback { position:relative;display:block;width:100%;height:100%;overflow:hidden;background:#29352d; }
+.artwork-fallback>svg { display:block;width:100%;height:100%; }
+.artwork-fallback i { position:absolute;right:7px;bottom:4px;color:rgba(255,255,255,.7);font:800 18px Manrope,sans-serif;font-style:normal;text-shadow:0 1px 4px rgba(0,0,0,.4); }
 .media-card { position:relative;display:grid;width:145px;flex:none;gap:0;padding:0;border:0;background:transparent;color:var(--ink);text-align:left;text-decoration:none;scroll-snap-align:start;cursor:pointer; }
 .media-card>.artwork { width:145px;height:145px;border:1px solid var(--line);border-radius:17px;box-shadow:0 8px 24px rgba(0,0,0,.16);transition:transform .28s var(--ease),border .2s ease; }
 .media-card-artist { width:116px;text-align:center; }

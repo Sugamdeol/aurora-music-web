@@ -48,11 +48,11 @@
 .home-shortcuts small { color: var(--muted); font-size: 10px; line-height: 1.4; }
 .home-shortcuts>a>svg { flex: none; color: var(--quiet); }
 .home-mood-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
-.home-mood-card { position: relative; display: flex; min-width: 0; min-height: 155px; flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: 9px; padding: 18px 15px; border: 1px solid color-mix(in srgb, var(--mood-tone) 28%, var(--line)); border-radius: 20px; background: linear-gradient(150deg, color-mix(in srgb, var(--mood-tone) 17%, transparent), transparent 80%), var(--surface-soft); text-decoration: none; transition: transform .2s ease, border-color .2s ease; }
-.home-mood-card>svg:first-child { margin-bottom: auto; color: var(--mood-tone); }
+.home-mood-card { position: relative; display: flex; min-width: 0; min-height: 175px; flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: 7px; padding: 10px 12px 14px; border: 1px solid color-mix(in srgb, var(--mood-tone) 28%, var(--line)); border-radius: 20px; background: var(--surface-soft); text-decoration: none; transition: transform .2s ease, border-color .2s ease; }
+.home-mood-art { width: 100%; height: 88px; flex: none; margin-bottom: auto; border-radius: 12px; object-fit: cover; }
 .home-mood-card strong { font-size: 13px; letter-spacing: -.2px; }
 .home-mood-card span { color: var(--muted); font-size: 11px; line-height: 1.5; }
-.home-mood-card>svg:last-child { position: absolute; top: 18px; right: 12px; color: var(--muted); }
+.home-mood-card>svg:last-child { position: absolute; top: 109px; right: 9px; color: var(--muted); }
 .home-mood-card:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--mood-tone) 65%, var(--line)); }
 .home-listening-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(270px, 1fr); gap: 18px; margin-top: 34px; }
 .home-heavy-rotation, .home-listening-card { min-width: 0; padding: 23px; border-radius: 24px; }
@@ -87,11 +87,13 @@
 :root[data-style="glass"] :is(.home-resume, .home-heavy-rotation, .home-listening-card) { background: linear-gradient(135deg, var(--panel-light), transparent 65%), var(--panel-fill); border-color: var(--home-edge); box-shadow: var(--panel-shadow); }
 :root[data-style="material"] .home-daily-mix::before { display: none; }
 :root[data-theme="light"] .home-daily-mix::before { opacity: .13; }
-:root[data-theme="light"] .home-mood-card>svg:first-child { color: color-mix(in srgb, var(--mood-tone) 60%, #233326); }
+:root[data-theme="light"] .home-mood-card { background: var(--panel-fill); }
 
 @media (max-width: 1250px) {
   .home-mood-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .home-mood-card { min-height: 135px; }
+  .home-mood-card { min-height: 166px; }
+  .home-mood-art { height: 78px; }
+  .home-mood-card>svg:last-child { top: 99px; }
   .home-shortcuts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .home-daily-mix { padding: 25px; }
 }
@@ -127,6 +129,9 @@
   .home-resume-actions>.secondary-button { min-height: 36px; padding: 0 11px; font-size: 11px; }
   .home-resume-actions>.text-button { min-height: 30px; font-size: 10px; }
   .home-shortcuts { gap: 9px; }
+  .home-mood-card { min-height: 150px; padding: 8px 10px 12px; }
+  .home-mood-art { height: 67px; }
+  .home-mood-card>svg:last-child { top: 85px; }
   .home-shortcuts>a { min-height: 78px; gap: 9px; padding: 12px; border-radius: 16px; }
   .home-shortcut-icon { width: 29px; height: 29px; border-radius: 9px; }
   .home-shortcut-icon>svg { width: 17px; height: 17px; }

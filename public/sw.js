@@ -1,10 +1,15 @@
-const VERSION = '2026-09-26.1';
+const VERSION = '2026-09-28.1';
 const CACHE_PREFIX = 'aurora-';
 const SHELL_CACHE = `${CACHE_PREFIX}shell-${VERSION}`;
 const STATIC_CACHE = `${CACHE_PREFIX}static-${VERSION}`;
 const ARTWORK_CACHE = `${CACHE_PREFIX}artwork-${VERSION}`;
 const ROOT_URL = new URL('/', self.location.origin).toString();
-const PRECACHE_URLS = ['/', '/aurora.svg', '/manifest.webmanifest'];
+const PRECACHE_URLS = [
+  '/', '/aurora.svg', '/manifest.webmanifest',
+  '/artwork/mood-slow-mornings.svg', '/artwork/mood-deep-focus.svg',
+  '/artwork/mood-after-hours.svg', '/artwork/mood-move.svg',
+  '/artwork/mood-rainy-days.svg', '/artwork/mood-feel-good.svg',
+];
 const STATIC_CACHE_LIMIT = 40;
 const ARTWORK_CACHE_LIMIT = 60;
 

@@ -179,7 +179,7 @@ describe('service worker update lifecycle', () => {
 
     expect(harness.postMessage).toHaveBeenCalledWith({
       type: 'AURORA_SW_VERSION',
-      version: '2026-09-26.1',
+      version: '2026-09-28.1',
     });
   });
 });

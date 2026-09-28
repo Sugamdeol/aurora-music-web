@@ -8,19 +8,19 @@ import { usePlaybackStore } from '../store/playback';
 import { useRoomStore } from '../room/client';
 import { MediaCard, PlaylistCard, SongRow } from '../components/Media';
 import { Artwork, EmptyState, ErrorState, Section, Skeleton } from '../components/primitives';
-import { Icon, type IconName } from '../components/Icon';
+import { Icon } from '../components/Icon';
 import { db } from '../lib/db';
 import { useYouTubeAccountStore } from '../store/youtubeAccount';
 import { dailyMix, uniqueTracks } from '../lib/homeMix';
 import './HomePage.css';
 
-const moods: Array<{ title: string; query: string; description: string; icon: IconName; tone: string }> = [
-  { title: 'Slow mornings', query: 'slow morning acoustic music', description: 'Ease into the day', icon: 'sun', tone: '#dfb47d' },
-  { title: 'Deep focus', query: 'instrumental focus music', description: 'Space to think', icon: 'music', tone: '#8cbcc7' },
-  { title: 'After hours', query: 'late night r&b music', description: 'Warm bass, low lights', icon: 'moon', tone: '#c89bb4' },
-  { title: 'Move', query: 'upbeat workout music', description: 'Find your momentum', icon: 'sparkles', tone: '#b5cf81' },
-  { title: 'Rainy days', query: 'rainy day indie music', description: 'Stay a little longer', icon: 'lyrics', tone: '#9daecc' },
-  { title: 'Feel good', query: 'feel good pop music', description: 'Turn the day around', icon: 'heart', tone: '#d6a18b' },
+const moods: Array<{ title: string; query: string; description: string; slug: string; tone: string }> = [
+  { title: 'Slow mornings', query: 'slow morning acoustic music', description: 'Ease into the day', slug: 'slow-mornings', tone: '#dfb47d' },
+  { title: 'Deep focus', query: 'instrumental focus music', description: 'Space to think', slug: 'deep-focus', tone: '#8cbcc7' },
+  { title: 'After hours', query: 'late night r&b music', description: 'Warm bass, low lights', slug: 'after-hours', tone: '#c89bb4' },
+  { title: 'Move', query: 'upbeat workout music', description: 'Find your momentum', slug: 'move', tone: '#b5cf81' },
+  { title: 'Rainy days', query: 'rainy day indie music', description: 'Stay a little longer', slug: 'rainy-days', tone: '#9daecc' },
+  { title: 'Feel good', query: 'feel good pop music', description: 'Turn the day around', slug: 'feel-good', tone: '#d6a18b' },
 ];
 
 function CurrentSongCard({ recent }: { recent: MediaTrack[] }) {
@@ -121,7 +121,7 @@ export function HomePage() {
     <Section title="Continue listening" action={recent.length ? <button className="text-button" onClick={() => play(recent, 'Recently played')}>Play all <Icon name="play" size={14} /></button> : <Link className="text-button" to="/search">Find music</Link>}>
       {!ready ? <div className="horizontal-shelf">{[1, 2, 3, 4].map((item) => <Skeleton key={item} className="continue-skeleton" />)}</div> : recent.length ? <div className="horizontal-shelf continue-shelf">{recent.slice(0, 8).map((track) => <MediaCard key={track.id} item={track} context={recent} contextLabel="Recently played" />)}</div> : <EmptyState icon="music" title="Your listening starts here" action={<Link className="secondary-button" to="/search">Find a song</Link>}>Play something you love. It will be waiting here when you come back.</EmptyState>}
     </Section>
-    <Section title="Find your mood" className="home-moods"><div className="home-mood-grid">{moods.map((mood) => <Link key={mood.title} to={`/search?q=${encodeURIComponent(mood.query)}`} className="home-mood-card" style={{ '--mood-tone': mood.tone } as React.CSSProperties}><Icon name={mood.icon} size={24} /><strong>{mood.title}</strong><span>{mood.description}</span><Icon name="chevron-right" size={16} /></Link>)}</div></Section>
+    <Section title="Find your mood" className="home-moods"><div className="home-mood-grid">{moods.map((mood) => <Link key={mood.title} to={`/search?q=${encodeURIComponent(mood.query)}`} className="home-mood-card" style={{ '--mood-tone': mood.tone } as React.CSSProperties}><img className="home-mood-art" src={`/artwork/mood-${mood.slug}.svg`} alt="" loading="lazy" decoding="async" /><strong>{mood.title}</strong><span>{mood.description}</span><Icon name="chevron-right" size={16} /></Link>)}</div></Section>
     {(personal.isLoading || Boolean(personal.data?.length) || personal.isError) && <Section title="New sounds for you" className="personal-section" action={personal.data?.length ? <button className="text-button" onClick={() => play(personal.data!, 'New sounds for you')}>Play discoveries <Icon name="play" size={14} /></button> : undefined}><p className="taste-note">{youtubeConnected ? 'Inspired by your YouTube Music likes and listening' : 'Inspired by your favorites and the songs you return to'}</p>{personal.isLoading ? <div className="horizontal-shelf">{[1, 2, 3, 4].map((item) => <Skeleton key={item} className="media-skeleton" />)}</div> : personal.data?.length ? <div className="horizontal-shelf">{personal.data.slice(0, 12).map((track) => <MediaCard key={track.id} item={track} context={personal.data} contextLabel="New sounds for you" />)}</div> : personal.isError ? <ErrorState message="We couldn’t reach your discoveries. Try again in a moment." retry={() => void personal.refetch()} /> : null}</Section>}
     {liked.length > 0 && <Section title="Always a favorite" action={<Link className="text-button" to="/library?tab=liked">All favorites <Icon name="chevron-right" size={14} /></Link>}><div className="horizontal-shelf">{liked.slice(0, 8).map((track) => <MediaCard key={track.id} item={track} context={liked} contextLabel="Liked songs" />)}</div></Section>}
     <div className="home-listening-grid">
