@@ -19,6 +19,25 @@ function PlaybackSpeed() {
   return <label className="playback-speed" title={together ? 'Listening rooms use normal speed to stay in sync' : 'Change playback speed'}><span>Speed</span><select aria-label="Playback speed" disabled={together} value={rate} onChange={(event) => usePlaybackStore.getState().setPlaybackRate(Number(event.target.value))}>{[.5, .75, 1, 1.25, 1.5, 1.75, 2].map((speed) => <option key={speed} value={speed}>{speed}×</option>)}</select></label>;
 }
 
+// Room guests need seek updates, but a dragged slider emits an input event per
+// frame — dozens of WebSocket messages a second that rubber-band every guest.
+// Leading + 320 ms trailing keeps the room in sync without the flood.
+let lastSeekBroadcastAt = 0;
+let seekBroadcastTimer: number | undefined;
+function broadcastSeek(): void {
+  const now = Date.now();
+  if (now - lastSeekBroadcastAt >= 300) {
+    lastSeekBroadcastAt = now;
+    useRoomStore.getState().broadcastPlayback('seek');
+    return;
+  }
+  window.clearTimeout(seekBroadcastTimer);
+  seekBroadcastTimer = window.setTimeout(() => {
+    lastSeekBroadcastAt = Date.now();
+    useRoomStore.getState().broadcastPlayback('seek');
+  }, 320);
+}
+
 function Progress() {
   const position = usePlaybackStore((state) => state.position);
   const duration = usePlaybackStore((state) => state.duration);
@@ -26,7 +45,7 @@ function Progress() {
   const percent = duration > 0 ? Math.min(100, (position / duration) * 100) : 0;
   return <div className="progress-wrap progress-large">
     <span>{formatDuration(position)}</span>
-    <input type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} onChange={(event) => { seek(Number(event.target.value)); useRoomStore.getState().broadcastPlayback('seek'); }} aria-label="Track progress" style={{ '--progress': `${percent}%` } as React.CSSProperties} />
+    <input type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} onChange={(event) => { seek(Number(event.target.value)); broadcastSeek(); }} aria-label="Track progress" style={{ '--progress': `${percent}%` } as React.CSSProperties} />
     <span>{formatDuration(duration)}</span>
   </div>;
 }
@@ -86,7 +105,7 @@ export function PlayerDock() {
       <PlaybackControls />
       <div className="dock-timeline">
         <span>{formatDuration(position)}</span>
-        <input className="dock-seek" type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} disabled={!duration} onChange={(event) => { usePlaybackStore.getState().seek(Number(event.target.value)); useRoomStore.getState().broadcastPlayback('seek'); }} aria-label="Track progress" aria-valuetext={`${formatDuration(position)} of ${formatDuration(duration)}`} style={{ '--progress': `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%` } as React.CSSProperties} />
+        <input className="dock-seek" type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} disabled={!duration} onChange={(event) => { usePlaybackStore.getState().seek(Number(event.target.value)); broadcastSeek(); }} aria-label="Track progress" aria-valuetext={`${formatDuration(position)} of ${formatDuration(duration)}`} style={{ '--progress': `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%` } as React.CSSProperties} />
         <span>{formatDuration(duration)}</span>
       </div>
     </div>
@@ -207,18 +226,18 @@ function TrackLyrics({ romanized }: { romanized: boolean }) {
       {query.data?.synced && <div className="lyric-timing"><span>Lyric timing</span><button disabled={timing.id !== track?.id} aria-label="Show lyrics 250 milliseconds earlier" onClick={() => adjustOffset(offset - 250)}>−</button><output>{offset > 0 ? '+' : ''}{offset} ms</output><button disabled={timing.id !== track?.id} aria-label="Show lyrics 250 milliseconds later" onClick={() => adjustOffset(offset + 250)}>+</button><button className="lyric-timing-reset" disabled={timing.id !== track?.id} onClick={() => adjustOffset(0)}>Reset</button></div>}
       {timingError && <small className="danger" role="status">{timingError}</small>}
       <div className="lyric-lines" ref={viewport} data-synced={query.data?.synced ? 'true' : 'false'}>
-        {lyrics.map((line, index) => <button type="button" data-lyric-index={index} key={`${line.time ?? 'plain'}-${index}`} className={`lyric-line ${index === currentLine && line.time !== undefined ? 'is-current' : ''} ${line.time === undefined ? 'is-plain' : ''}`} onClick={() => { if (line.time !== undefined) { seek(line.time + offset / 1000); useRoomStore.getState().broadcastPlayback('seek'); } }} aria-current={index === currentLine ? 'true' : undefined}><span>{line.text}</span>{romanized && line.romanized && <small className="romanized-lyric">{line.romanized}</small>}</button>)}
+        {lyrics.map((line, index) => <button type="button" data-lyric-index={index} key={`${line.time ?? 'plain'}-${index}`} className={`lyric-line ${index === currentLine && line.time !== undefined ? 'is-current' : ''} ${line.time === undefined ? 'is-plain' : ''}`} onClick={() => { if (line.time !== undefined) { seek(line.time + offset / 1000); broadcastSeek(); } }} aria-current={index === currentLine ? 'true' : undefined}><span>{line.text}</span>{romanized && line.romanized && <small className="romanized-lyric">{line.romanized}</small>}</button>)}
       </div>
     </>}
   </div>;
 }
 
-let sleepTimeout: number | undefined;
+let sleepWatcher: number | undefined;
 let sleepEndUnsubscribe: (() => void) | undefined;
 let sleepEndsAt = 0;
 function clearSleepTimer() {
-  window.clearTimeout(sleepTimeout);
-  sleepTimeout = undefined;
+  window.clearInterval(sleepWatcher);
+  sleepWatcher = undefined;
   sleepEndUnsubscribe?.();
   sleepEndUnsubscribe = undefined;
   sleepEndsAt = 0;
@@ -227,7 +246,12 @@ function startSleepTimer(minutes?: number) {
   clearSleepTimer();
   if (minutes) {
     sleepEndsAt = Date.now() + minutes * 60_000;
-    sleepTimeout = window.setTimeout(() => { usePlaybackStore.getState().pause(); clearSleepTimer(); }, minutes * 60_000);
+    // A single long setTimeout gets indefinitely throttled in frozen/background
+    // tabs — exactly the state a sleep timer runs in. Poll the wall clock
+    // instead so the pause lands shortly after the deadline, even on wake.
+    sleepWatcher = window.setInterval(() => {
+      if (Date.now() >= sleepEndsAt) { usePlaybackStore.getState().pause(); clearSleepTimer(); }
+    }, 15_000);
   } else {
     const currentId = usePlaybackStore.getState().currentTrack?.id;
     if (!currentId) return;
@@ -295,7 +319,7 @@ function FullPlayer() {
         <div className="full-track-copy"><div><h1>{track.title}</h1><p>{track.artist}{track.album ? <span>{track.album}</span> : null}</p></div><IconButton icon="heart" label={liked ? 'Unlike track' : 'Like track'} active={liked} onClick={() => void toggleLike(track)} /></div>
         <Progress />
         <PlaybackControls large />
-        <div className="player-tools"><PlaybackSpeed /><div className="seek-buttons"><button onClick={() => { const player = usePlaybackStore.getState(); player.seek(player.position - 10); useRoomStore.getState().broadcastPlayback('seek'); }} aria-label="Rewind ten seconds">−10s</button><button onClick={() => { const player = usePlaybackStore.getState(); player.seek(player.position + 10); useRoomStore.getState().broadcastPlayback('seek'); }} aria-label="Forward ten seconds">+10s</button></div></div>
+        <div className="player-tools"><PlaybackSpeed /><div className="seek-buttons"><button onClick={() => { const player = usePlaybackStore.getState(); player.seek(player.position - 10); broadcastSeek(); }} aria-label="Rewind ten seconds">−10s</button><button onClick={() => { const player = usePlaybackStore.getState(); player.seek(player.position + 10); broadcastSeek(); }} aria-label="Forward ten seconds">+10s</button></div></div>
         <div className="full-player-actions">
           <button onClick={() => openSheet('queue')}><Icon name="queue" /><span>Queue</span></button>
           <button onClick={() => openSheet('sleep')}><Icon name="clock" /><span>Sleep</span></button>
@@ -315,6 +339,14 @@ function FullPlayer() {
 function DetailSheet() {
   const active = usePlaybackStore((state) => state.activeSheet);
   const close = () => usePlaybackStore.getState().openSheet(null);
+  // FullPlayer owns Escape only while it is mounted; sheets opened straight
+  // from the dock still need a keyboard exit.
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [active]);
   if (!active) return null;
   return <div className="detail-sheet" role="dialog" aria-modal="true" aria-label={active === 'queue' ? 'Playback queue' : active === 'equalizer' ? 'Equalizer' : 'Sleep timer'}>
     <button className="sheet-backdrop" onClick={close} aria-label="Close panel" />

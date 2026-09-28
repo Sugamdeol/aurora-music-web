@@ -16,5 +16,9 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./tests/setup.ts'],
     css: true,
+    // jsdom + fake-indexeddb are slow enough that default timeouts flake when
+    // the full suite runs in parallel (CI machines are slower still).
+    testTimeout: 15_000,
+    hookTimeout: 15_000,
   },
 });

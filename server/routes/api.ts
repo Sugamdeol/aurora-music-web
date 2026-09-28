@@ -70,6 +70,33 @@ function limiter(limit: number, windowMs: number): RequestHandler {
   });
 }
 
+// Small TTL cache with in-flight coalescing for catalog reads. The YouTube
+// Music catalog is public and identical for every listener, so sharing a fresh
+// answer across users is safe and removes most duplicate upstream calls
+// (back-to-back searches, page refresh herds, explore reloads).
+function createCatalogCache(ttlMs: number, maxEntries = 300) {
+  const entries = new Map<string, { savedAt: number; payload: unknown }>();
+  const inFlight = new Map<string, Promise<unknown>>();
+  return async function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+    const hit = entries.get(key);
+    if (hit && Date.now() - hit.savedAt < ttlMs) return hit.payload as T;
+    const running = inFlight.get(key);
+    if (running) return running as Promise<T>;
+    const task = load().then((payload) => {
+      entries.set(key, { savedAt: Date.now(), payload });
+      if (entries.size > maxEntries) {
+        const oldest = entries.keys().next().value;
+        if (oldest !== undefined) entries.delete(oldest);
+      }
+      return payload;
+    }).finally(() => {
+      if (inFlight.get(key) === task) inFlight.delete(key);
+    });
+    inFlight.set(key, task);
+    return task;
+  };
+}
+
 function missingYtDlp(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
 }
@@ -98,7 +125,6 @@ async function fetchMedia(url: string, headers: Headers, signal: AbortSignal): P
 
 export function createApiRouter({ music, audio }: ApiDependencies): Router {
   const router = Router();
-  let homeCache: { data: { sections: ReturnType<typeof normalizeSections>; updatedAt: string }; savedAt: number } | undefined;
 
   router.get('/health', asyncHandler(async (_req, res) => {
     const ytDlp = await audio.readiness();
@@ -187,12 +213,14 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
     res.set('Cache-Control', 'no-store').json({ ...idea, tracks, ranking: ranked ? 'typesafe' : 'catalog' });
   }));
 
-  router.get('/account/youtube-music', asyncHandler(async (req, res) => {
+  // Every call spends the server's YouTube Data API quota, so it gets a budget
+  // far tighter than the global limiter.
+  router.get('/account/youtube-music', limiter(20, 15 * 60_000), asyncHandler(async (req, res) => {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const apiKey = process.env.GOOGLE_YOUTUBE_API_KEY;
     if (!clientId || !apiKey) throw new HttpError(503, 'SERVICE_UNAVAILABLE', 'Google sign-in needs a web OAuth client ID and YouTube Data API key in the server environment.');
     const token = req.get('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
-    if (!token || token.length > 4096) throw new HttpError(401, 'BAD_REQUEST', 'Sign in to your Google account again to use personalized suggestions.');
+    if (!token || token.length > 4096) throw new HttpError(401, 'AUTH_REQUIRED', 'Sign in to your Google account again to use personalized suggestions.');
 
     const tokenInfoUrl = new URL('https://oauth2.googleapis.com/tokeninfo');
     tokenInfoUrl.searchParams.set('access_token', token);
@@ -200,7 +228,7 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
     const tokenInfo = record(await tokenResponse.json().catch(() => ({})));
     const scopes = String(tokenInfo.scope ?? '').split(/\s+/);
     if (!tokenResponse.ok || tokenInfo.aud !== clientId || !scopes.includes('https://www.googleapis.com/auth/youtube.readonly')) {
-      throw new HttpError(401, 'BAD_REQUEST', 'Google did not grant YouTube read access. Reconnect and allow the requested permission.');
+      throw new HttpError(401, 'INVALID_CREDENTIALS', 'Google did not grant YouTube read access. Reconnect and allow the requested permission.');
     }
 
     const channelUrl = new URL('https://www.googleapis.com/youtube/v3/channels');
@@ -235,32 +263,33 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
     });
   }));
 
-  router.get('/home', asyncHandler(async (_req, res) => {
-    if (homeCache && Date.now() - homeCache.savedAt < HOME_CACHE_MS) {
-      res.set('Cache-Control', 'public, max-age=300').json(homeCache.data);
-      return;
-    }
+  const cachedCatalog = createCatalogCache(90_000);
+  const cachedEntity = createCatalogCache(5 * 60_000);
+  // Coalesced so concurrent requests during a cache miss share one upstream call.
+  const cachedHome = createCatalogCache(HOME_CACHE_MS, 4);
 
-    const feed = record(await providerCall(
-      'Home feed',
-      'Aurora could not load music right now. Try again in a moment.',
-      music.getHome(),
-    ));
-    const data = {
-      sections: normalizeSections(feed.sections, 'Made for you', 'playlist'),
-      updatedAt: new Date().toISOString(),
-    };
-    homeCache = { data, savedAt: Date.now() };
+  router.get('/home', asyncHandler(async (_req, res) => {
+    const data = await cachedHome('home', async () => {
+      const feed = record(await providerCall(
+        'Home feed',
+        'Aurora could not load music right now. Try again in a moment.',
+        music.getHome(),
+      ));
+      return {
+        sections: normalizeSections(feed.sections, 'Made for you', 'playlist'),
+        updatedAt: new Date().toISOString(),
+      };
+    });
     res.set('Cache-Control', 'public, max-age=300').json(data);
   }));
 
   router.get('/search', limiter(120, 15 * 60_000), asyncHandler(async (req, res) => {
     const { q: query, type } = parseWith(searchQuerySchema, req.query);
-    const result = record(await providerCall(
+    const result = record(await cachedCatalog(`search:${type}:${query.toLowerCase()}`, () => providerCall(
       'Search',
       'Music search is unavailable right now. Try again in a moment.',
       music.search(query, type),
-    ));
+    )));
     const shelfName = type === 'song' ? 'songs' : `${type}s`;
     const shelf = record(result[shelfName]);
     const items = values(shelf.contents)
@@ -277,21 +306,21 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
 
   router.get('/suggestions', limiter(180, 15 * 60_000), asyncHandler(async (req, res) => {
     const { q: query, limit } = parseWith(suggestionsQuerySchema, req.query);
-    const result = await providerCall(
+    const result = await cachedCatalog(`suggest:${query.toLowerCase()}`, () => providerCall(
       'Search suggestions',
       'Search suggestions are unavailable right now.',
       music.getSuggestions(query),
-    );
+    ));
     const suggestions = normalizeSuggestions(result).slice(0, limit);
     res.set('Cache-Control', 'private, max-age=60').json({ suggestions, query });
   }));
 
   router.get(['/explore', '/discovery', '/discover'], asyncHandler(async (_req, res) => {
-    const explore = record(await providerCall(
+    const explore = record(await cachedEntity('explore', () => providerCall(
       'Explore',
       'Explore is unavailable right now. Try again in a moment.',
       music.getExplore(),
-    ));
+    )));
     const sections = normalizeSections(explore.sections, 'Explore', 'playlist');
     const categories = normalizeExploreCategories(explore.top_buttons);
     res.set('Cache-Control', 'public, max-age=180').json({
@@ -303,11 +332,11 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
 
   router.get('/artist/:id', asyncHandler(async (req, res) => {
     const { id } = parseWith(artistParamsSchema, req.params);
-    const artist = record(await providerCall(
+    const artist = record(await cachedEntity(`artist:${id}`, () => providerCall(
       'Artist lookup',
       'This artist page could not be loaded.',
       music.getArtist(id),
-    ));
+    )));
     res.set('Cache-Control', 'private, max-age=90').json({
       artist: normalizeHeader(artist.header),
       sections: normalizeSections(artist.sections, 'More music'),
@@ -316,11 +345,11 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
 
   router.get('/album/:id', asyncHandler(async (req, res) => {
     const { id } = parseWith(albumParamsSchema, req.params);
-    const album = record(await providerCall(
+    const album = record(await cachedEntity(`album:${id}`, () => providerCall(
       'Album lookup',
       'This album could not be loaded.',
       music.getAlbum(id),
-    ));
+    )));
     const items = values(album.contents)
       .map((item) => normalizeItem(item, 'song'))
       .filter((item) => item.id);
@@ -332,11 +361,11 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
 
   router.get('/playlist/:id', asyncHandler(async (req, res) => {
     const { id } = parseWith(playlistParamsSchema, req.params);
-    const playlist = record(await providerCall(
+    const playlist = record(await cachedEntity(`playlist:${id}`, () => providerCall(
       'Playlist lookup',
       'This playlist could not be loaded.',
       music.getPlaylist(id),
-    ));
+    )));
     const items = values(playlist.contents)
       .map((item) => normalizeItem(item, 'song'))
       .filter((item) => item.id);
@@ -348,11 +377,11 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
 
   router.get('/related/:id', asyncHandler(async (req, res) => {
     const { id } = parseWith(trackParamsSchema, req.params);
-    const related = record(await providerCall(
+    const related = record(await cachedEntity(`related:${id}`, () => providerCall(
       'Related music lookup',
       'Related music could not be loaded.',
       music.getRelated(id),
-    ));
+    )));
     const sections = normalizeSections(related.contents, 'Related music');
     res.set('Cache-Control', 'private, max-age=90').json({ sections });
   }));
@@ -378,8 +407,9 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
     value === 'high' || value === 'data-saver' ? value : 'auto';
 
   // Resolve the upcoming song while the current one plays. This only warms
-  // the short-lived signed URL; it does not download or cache the audio.
-  router.get('/stream-warm/:id', limiter(30, 15 * 60_000), asyncHandler(async (req, res) => {
+  // the signed URL; it does not download or cache the audio. Results share the
+  // extractor's cache + in-flight dedupe, so repeats are free.
+  router.get('/stream-warm/:id', limiter(120, 15 * 60_000), asyncHandler(async (req, res) => {
     const { id } = parseWith(trackParamsSchema, req.params);
     const quality = requestedQuality(req.query.quality);
     if (audio.warmAudioFormat) await audio.warmAudioFormat(id, quality);
@@ -387,7 +417,10 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
     res.set('Cache-Control', 'no-store').status(204).end();
   }));
 
-  router.get('/stream/:id', limiter(90, 15 * 60_000), asyncHandler(async (req, res) => {
+  // HTML5 audio issues several range GETs per song (plus seeks and reconnects);
+  // 90/15m was reachable by a single active listener. 400 keeps abuse bounded
+  // without self-DoS during normal playback.
+  router.get('/stream/:id', limiter(400, 15 * 60_000), asyncHandler(async (req, res) => {
     const { id } = parseWith(trackParamsSchema, req.params);
     const quality = requestedQuality(req.query.quality);
     const range = req.headers.range;
@@ -404,7 +437,7 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
     try {
       let upstream: Response | undefined;
       for (let attempt = 0; attempt < 2; attempt += 1) {
-        const format = quality === 'auto' ? await audio.getAudioFormat(id, attempt > 0) : await audio.getAudioFormat(id, attempt > 0, quality);
+        const format = await audio.getAudioFormat(id, attempt > 0, quality);
         const headers = new Headers(format.httpHeaders);
         if (range) headers.set('Range', range);
 

@@ -47,7 +47,12 @@ describe('web app manifest', () => {
     }
 
     expect(new Set(manifest.icons.map(({ purpose }) => purpose))).toEqual(new Set(['any', 'maskable']));
-    expect(manifest.icons.every(({ sizes, type }) => sizes === 'any' && type === 'image/svg+xml')).toBe(true);
+    // SVG stays the crisp default; sized PNGs keep install prompts and splash
+    // screens working on platforms that ignore SVG icons.
+    expect(manifest.icons.every(({ sizes, type }) =>
+      (sizes === 'any' && type === 'image/svg+xml') || (type === 'image/png' && /^\d+x\d+$/.test(sizes ?? '')),
+    )).toBe(true);
+    expect(manifest.icons.some(({ sizes, type }) => type === 'image/png' && (sizes === '192x192' || sizes === '512x512'))).toBe(true);
   });
 });
 

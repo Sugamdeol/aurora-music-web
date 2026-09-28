@@ -1,11 +1,13 @@
-const VERSION = '2026-09-28.1';
+// Bump on every release that ships this file or its precache list. The build
+// does not rewrite this constant, so keep it in sync when touching sw.js.
+const VERSION = '2026-09-28.2';
 const CACHE_PREFIX = 'aurora-';
 const SHELL_CACHE = `${CACHE_PREFIX}shell-${VERSION}`;
 const STATIC_CACHE = `${CACHE_PREFIX}static-${VERSION}`;
 const ARTWORK_CACHE = `${CACHE_PREFIX}artwork-${VERSION}`;
 const ROOT_URL = new URL('/', self.location.origin).toString();
 const PRECACHE_URLS = [
-  '/', '/aurora.svg', '/manifest.webmanifest',
+  '/', '/aurora.svg', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png',
   '/artwork/mood-slow-mornings.svg', '/artwork/mood-deep-focus.svg',
   '/artwork/mood-after-hours.svg', '/artwork/mood-move.svg',
   '/artwork/mood-rainy-days.svg', '/artwork/mood-feel-good.svg',

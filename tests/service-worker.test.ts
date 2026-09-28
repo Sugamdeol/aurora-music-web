@@ -179,7 +179,9 @@ describe('service worker update lifecycle', () => {
 
     expect(harness.postMessage).toHaveBeenCalledWith({
       type: 'AURORA_SW_VERSION',
-      version: '2026-09-28.1',
+      // Whatever sw.js currently ships — the test follows the file, so a
+      // version bump in the worker never silently desyncs this assertion.
+      version: workerSource.match(/VERSION = '([^']+)'/)?.[1],
     });
   });
 });

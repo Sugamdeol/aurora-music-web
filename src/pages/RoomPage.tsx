@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useRoomStore } from '../room/client';
 import { usePlaybackStore } from '../store/playback';
@@ -15,6 +15,14 @@ export function RoomPage() {
   const [message, setMessage] = useState('');
   const connected = room.status === 'connected';
   const persistPreferences = async () => room.setPreferences({ username: username.trim() || 'Listener', server: server.trim() });
+  // A shared invite link (/room/AB12CD) joins directly instead of asking the
+  // guest to retype the code.
+  useEffect(() => {
+    if (roomCode && room.status === 'disconnected' && !room.error) {
+      void persistPreferences().then(() => useRoomStore.getState().joinRoom(roomCode));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per invite code
+  }, [roomCode]);
   const start = async (action: 'create' | 'join') => {
     await persistPreferences();
     action === 'create' ? useRoomStore.getState().createRoom() : useRoomStore.getState().joinRoom(code);
@@ -38,7 +46,7 @@ export function RoomPage() {
       {room.error && <div className="room-error" role="alert"><span>{room.error}</span><button onClick={() => useRoomStore.setState({ error: undefined, status: 'disconnected' })}>Dismiss</button></div>}
     </> : <section className="room-live">
       {room.error && <div className="room-error" role="alert"><span>{room.error}</span><button onClick={() => useRoomStore.setState({ error: undefined })}>Dismiss</button></div>}
-      <header className="room-code"><div><span>Room code</span><strong>{room.code}</strong></div><button className="secondary-button" onClick={() => void navigator.clipboard?.writeText(room.code)}><Icon name="copy" size={16} /> Copy code</button><button className="text-button danger" onClick={room.leaveRoom}>Leave</button></header>
+      <header className="room-code"><div><span>Room code</span><strong>{room.code}</strong></div><button className="secondary-button" onClick={() => void navigator.clipboard?.writeText(room.code)}><Icon name="copy" size={16} /> Copy code</button><button className="secondary-button" onClick={() => void navigator.clipboard?.writeText(`${window.location.origin}/room/${room.code}`)}><Icon name="share" size={16} /> Copy invite link</button><button className="text-button danger" onClick={room.leaveRoom}>Leave</button></header>
       <div className="room-now glass-surface">{track ? <><Artwork src={track.artwork} title={track.title} /><div><span>Now playing</span><strong>{track.title}</strong><small>{track.artist}</small></div><button className="text-button" onClick={() => usePlaybackStore.getState().openFullPlayer(true)}>Open player</button></> : <><span className="room-empty-art"><Icon name="music" /></span><div><span>Now playing</span><strong>Nothing yet</strong><small>Choose a song and it will sync here.</small></div></>}</div>
       <div className="room-columns">
         <section><header className="section-header"><h2>Listeners</h2><span>{room.users.length}</span></header><div className="listener-list">{room.users.map((user) => <div key={user.id}><span className="listener-avatar">{user.name.slice(0, 1).toUpperCase()}</span><span><strong>{user.name}</strong><small>{user.host ? 'Host' : 'Listener'}{!user.connected ? ' · reconnecting' : ''}</small></span>{user.id === room.userId && <em>You</em>}</div>)}</div>{room.role === 'host' && <label className="toggle-row"><span><strong>Listener controls</strong><small>Let guests play, pause, and skip</small></span><input type="checkbox" checked={room.allowParticipantControl} onChange={(event) => room.setParticipantControl(event.target.checked)} /></label>}</section>
