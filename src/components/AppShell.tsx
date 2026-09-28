@@ -64,7 +64,7 @@ export function AppShell() {
       }
       const target = event.target instanceof HTMLElement ? event.target : null;
       const isInteractive = Boolean(target?.closest('button, a, input, textarea, select, [role="button"], [role="tab"], [contenteditable="true"]'));
-      if (isInteractive || event.ctrlKey || event.metaKey || event.altKey || document.querySelector('.modal-scrim, .choice-scrim')) return;
+      if (isInteractive || event.ctrlKey || event.metaKey || event.altKey || document.querySelector('.modal-scrim, .choice-scrim, .detail-sheet')) return;
       const player = usePlaybackStore.getState();
       if (currentTrack && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
         event.preventDefault();

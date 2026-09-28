@@ -10,7 +10,10 @@ const MAX_OUTPUT_BYTES = 1024 * 1024;
 const extractionQueue = new TaskQueue(1);
 const EXTRACTION_TIMEOUT_MS = 60_000;
 const STATUS_TTL_MS = 60_000;
-const AUDIO_CACHE_TTL_MS = 3 * 60_000;
+// Signed googlevideo URLs live for hours. Capping the cache at 3 minutes meant
+// nearly every play re-ran the slow yt-dlp extraction; 30 minutes keeps replay
+// and restart-warmed tracks instant while staying comfortably below expiry.
+const AUDIO_CACHE_TTL_MS = 30 * 60_000;
 
 const rawFormatSchema = z.object({
   url: z.string().url(),
@@ -114,16 +117,16 @@ function safeHeaders(value: Record<string, unknown> | undefined): Record<string,
 }
 
 function cacheExpiry(url: string): number {
-  const fallback = Date.now() + AUDIO_CACHE_TTL_MS;
+  const ceiling = Date.now() + AUDIO_CACHE_TTL_MS;
   try {
     const expires = Number(new URL(url).searchParams.get('expire')) * 1_000;
     if (Number.isFinite(expires) && expires > Date.now()) {
-      return Math.max(Date.now() + 15_000, Math.min(fallback, expires - 30_000));
+      return Math.max(Date.now() + 15_000, Math.min(ceiling, expires - 30_000));
     }
   } catch {
-    // The URL has already been validated; use the conservative fallback.
+    // The URL has already been validated; use the cache ceiling.
   }
-  return fallback;
+  return ceiling;
 }
 
 function errorReason(error: unknown): string {

@@ -7,6 +7,7 @@ export type PlayerSheet = 'queue' | 'sleep' | 'equalizer' | null;
 interface PersistedQueue {
   tracks: MediaTrack[];
   index: number;
+  position?: number;
 }
 
 interface PlaybackState {
@@ -60,16 +61,29 @@ interface PlaybackState {
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 let saveTimer: number | undefined;
+// streamUrl is a signed URL that dies within hours and fileId only exists on
+// this device's IndexedDB — persisting either produces unrestorable queues.
+function storable(track: MediaTrack): MediaTrack {
+  const { streamUrl: _streamUrl, fileId: _fileId, ...safe } = track;
+  return safe;
+}
 function persist(state: Pick<PlaybackState, 'queue' | 'currentIndex' | 'volume' | 'shuffle' | 'repeat'>): void {
   window.clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => {
     void Promise.all([
-      setSetting('queue', { tracks: state.queue, index: state.currentIndex }),
+      setSetting('queue', { tracks: state.queue.map(storable), index: state.currentIndex, position: usePlaybackStore.getState().position }),
       setSetting('volume', state.volume),
       setSetting('shuffle', state.shuffle),
       setSetting('repeat', state.repeat),
     ]);
   }, 150);
+}
+let positionSaveTimer: number | undefined;
+function persistPosition(position: number): void {
+  window.clearTimeout(positionSaveTimer);
+  positionSaveTimer = window.setTimeout(() => {
+    void setSetting('queue.position', position);
+  }, 4_000);
 }
 
 function updateCurrent(queue: MediaTrack[], index: number): Pick<PlaybackState, 'queue' | 'currentIndex' | 'currentTrack'> {
@@ -98,15 +112,21 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   sourceRevision: 0,
 
   bootstrap: async () => {
-    const [savedQueue, volume, shuffle, repeat, playbackRate] = await Promise.all([
+    const [savedQueue, savedPosition, volume, shuffle, repeat, playbackRate] = await Promise.all([
       getSetting<PersistedQueue>('queue', { tracks: [], index: -1 }),
+      getSetting<number>('queue.position', 0),
       getSetting<number>('volume', 0.82),
       getSetting<boolean>('shuffle', false),
       getSetting<RepeatMode>('repeat', 'off'),
       getSetting<number>('player.speed', 1),
     ]);
     const current = updateCurrent(savedQueue.tracks ?? [], savedQueue.index ?? -1);
-    set({ ...current, ready: true, volume: clamp(volume, 0, 1), shuffle, repeat: ['off', 'all', 'one'].includes(repeat) ? repeat : 'off', playbackRate: Number.isFinite(playbackRate) ? clamp(playbackRate, .5, 2) : 1 });
+    // Resume mid-track: the engine seeks once metadata loads (see its
+    // loadedmetadata handler), so restoring the position here is enough.
+    const duration = current.currentTrack?.durationSeconds ?? 0;
+    const saved = Number.isFinite(savedPosition) && savedPosition > 0 ? savedPosition : savedQueue.position ?? 0;
+    const position = current.currentTrack ? (duration ? clamp(saved, 0, duration) : saved) : 0;
+    set({ ...current, ready: true, volume: clamp(volume, 0, 1), shuffle, repeat: ['off', 'all', 'one'].includes(repeat) ? repeat : 'off', playbackRate: Number.isFinite(playbackRate) ? clamp(playbackRate, .5, 2) : 1, position, duration });
   },
 
   playTracks: (tracks, startIndex = 0, contextLabel = 'Queue') => {
@@ -188,7 +208,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     if (!Number.isFinite(seconds)) return;
     set({ position: clamp(seconds, 0, get().duration || Infinity) });
   },
-  setPosition: (position) => set({ position }),
+  setPosition: (position) => { set({ position }); if (get().currentTrack) persistPosition(position); },
   setDuration: (duration) => set({ duration: Number.isFinite(duration) ? duration : 0 }),
   setStatus: (status, error) => set({ status, error }),
   setVolume: (volume) => { set({ volume: clamp(volume, 0, 1), muted: false }); persist(get()); },
@@ -211,7 +231,10 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     const insertAt = next && state.currentIndex >= 0 ? state.currentIndex + 1 : queue.length;
     queue.splice(insertAt, 0, track);
     const current = updateCurrent(queue, state.currentIndex < 0 ? 0 : state.currentIndex);
-    set({ ...current, autoplayEligible: false });
+    // Queueing into an idle player should start playing, not surface a paused
+    // dock with no explanation.
+    const wasIdle = state.currentIndex < 0;
+    set({ ...current, autoplayEligible: false, ...(wasIdle ? { isPlaying: true, status: 'loading' as const, error: undefined, sourceRevision: state.sourceRevision + 1 } : {}) });
     persist({ ...state, ...current });
   },
 

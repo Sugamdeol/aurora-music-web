@@ -77,6 +77,13 @@ export class PlaybackEngine {
     on('loadedmetadata', () => {
       const duration = Number.isFinite(this.audio.duration) ? this.audio.duration : store().currentTrack?.durationSeconds ?? 0;
       store().setDuration(duration);
+      // A seek requested before the stream was seekable (restored session
+      // position, tapping the bar during load) is silently dropped by the
+      // browser; re-apply the store's position now that we can.
+      const wanted = store().position;
+      if (wanted > 1.25 && Math.abs((this.audio.currentTime || 0) - wanted) > 1.25) {
+        try { this.audio.currentTime = wanted; this.lastListenPosition = wanted; } catch { /* not seekable yet */ }
+      }
       store().setStatus(this.audio.paused ? 'ready' : 'playing');
     });
     on('durationchange', () => {

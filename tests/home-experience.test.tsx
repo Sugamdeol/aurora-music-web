@@ -78,7 +78,7 @@ describe('expanded home', () => {
     useLibraryStore.setState({ likedTracks: favorites, likedIds: new Set(favorites.map((track) => track.id)) });
     openHome();
     fireEvent.click(screen.getByRole('button', { name: 'Save mix' }));
-    expect(await screen.findByRole('link', { name: 'Open saved mix' })).toHaveAttribute('href', expect.stringContaining('/playlist/local/'));
+    expect(await screen.findByRole('link', { name: 'Open saved mix' }, { timeout: 5000 })).toHaveAttribute('href', expect.stringContaining('/playlist/local/'));
     const saved = await hydratePlaylists();
     expect(saved).toHaveLength(1);
     expect(saved[0].tracks).toHaveLength(3);

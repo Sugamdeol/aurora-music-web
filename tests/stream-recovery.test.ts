@@ -94,7 +94,7 @@ describe('stream recovery', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     expect((fetch.mock.calls[1][1].headers as Headers).get('Range')).toBe('bytes=0-2');
     expect(audio.invalidate).toHaveBeenCalledWith('mhSpdlCXU7M');
-    expect(audio.getAudioFormat).toHaveBeenLastCalledWith('mhSpdlCXU7M', true);
+    expect(audio.getAudioFormat).toHaveBeenLastCalledWith('mhSpdlCXU7M', true, 'auto');
   });
 
   it('returns an error for an upstream abort instead of leaving the browser hanging', async () => {

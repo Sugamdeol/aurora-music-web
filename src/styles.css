@@ -161,7 +161,11 @@ button:disabled { opacity:.42; cursor:not-allowed; }
 .song-like svg { width:18px; }
 .song-like.is-active svg { fill:color-mix(in srgb,var(--accent) 20%,transparent); }
 .row-menu-wrap { position:relative; }
-.row-menu { position:absolute;z-index:70;right:0;top:43px;width:210px;padding:7px;border:1px solid var(--line-bright);border-radius:14px;background:#171d17;box-shadow:var(--shadow-large); }
+.row-menu { position:absolute;z-index:120;right:0;top:43px;width:210px;padding:7px;border:1px solid var(--line-bright);border-radius:14px;background:#171d17;box-shadow:var(--shadow-large); }
+/* Menus must stack above the fixed player dock (80) and bottom nav (90), and
+   the dark slab needs a light-theme counterpart instead of floating a dark
+   card over the bright glass. */
+:root[data-theme="light"] .row-menu { background:#fdfefd; }
 .row-menu button { display:block;width:100%;padding:9px 10px;border:0;border-radius:9px;background:none;text-align:left;font-size:13px;cursor:pointer; }
 .row-menu button:hover { background:rgba(255,255,255,.055); }
 .menu-label { padding:9px 10px 4px;color:var(--quiet);font-size:12px;font-weight:700; }
@@ -800,9 +804,11 @@ body { background:radial-gradient(ellipse 72% 40% at 48% -18%,color-mix(in srgb,
    (the dock's now-playing block, queue rows, lyric lines) and gives each one
    its own backdrop-filter compositing layer for nothing. */
 :root[data-style="glass"] button:not(.primary-button):not(.main-play):not(.sheet-backdrop):not(.plain-button):not(.text-button):not(.dock-track):not(.song-row-copy):not(.song-row-art):not(.lyric-line):not(.chart-column) {
+  /* Translucent wash only — no backdrop-filter here. This rule matches nearly
+     every button, so each blur cost its own compositing layer (a 50-row list
+     rendered ~200 of them). The gradient keeps the glass tint at zero GPU
+     cost; structural surfaces (.glass-surface, dock, player) keep real blur. */
   background-image:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.008) 64%);
-  backdrop-filter:blur(16px) saturate(1.28);
-  -webkit-backdrop-filter:blur(16px) saturate(1.28);
 }
 :root[data-style="glass"] .search-shortcut,
 :root[data-style="glass"] .search-field,

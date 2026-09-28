@@ -45,7 +45,11 @@ async function mantle(method: 'GET'|'POST', path: string, body?: unknown): Promi
   return response.json();
 }
 
-function cookieSecret(): string { return configured().key; }
+// Session signing must not reuse the storage credential: leaking the MantleDB
+// key must not also hand out the ability to forge any user's session. Set
+// SYNC_SESSION_SECRET in production; the storage key remains the fallback for
+// existing single-secret deployments.
+function cookieSecret(): string { return process.env.SYNC_SESSION_SECRET?.trim() || configured().key; }
 function sign(payload: string): string { return createHmac('sha256', cookieSecret()).update(payload).digest('base64url'); }
 function setSession(res: Response, username: string): void {
   const payload = Buffer.from(JSON.stringify({ username, expiresAt: Date.now() + SESSION_AGE })).toString('base64url');
@@ -94,6 +98,9 @@ export function createSyncRouter(): Router {
   const router = Router();
   router.use(cookieParser);
   const authLimit = rateLimit({ windowMs: 15 * 60_000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false });
+  // /data fans out to MantleDB on every request; it needs its own budget so one
+  // session cannot serialize the instance or exhaust the shared storage quota.
+  const dataLimit = rateLimit({ windowMs: 15 * 60_000, limit: 120, standardHeaders: 'draft-8', legacyHeaders: false });
   router.get('/status', (_req, res) => res.set('Cache-Control', 'no-store').json({ configured: Boolean(process.env.MANTLEDB_NAMESPACE && process.env.MANTLEDB_KEY) }));
   router.post('/register', originGuard, authLimit, asyncHandler(async (req, res) => {
     const input = z.object({ username: usernameSchema, password: passwordSchema }).strict().parse(req.body);
@@ -124,13 +131,13 @@ export function createSyncRouter(): Router {
     res.set('Cache-Control', 'no-store').json({ user: { username } });
   }));
   router.post('/logout', originGuard, (_req, res) => { clearSession(res); res.status(204).end(); });
-  router.get('/data', asyncHandler(async (req, res) => {
+  router.get('/data', dataLimit, asyncHandler(async (req, res) => {
     const username = requireAccount(req, res);
     const account = await mantle('GET', accountPath(username)) as Account | null;
     if (!account) { clearSession(res); throw new HttpError(401, 'AUTH_REQUIRED', 'Sign in to sync your library.'); }
     res.set('Cache-Control', 'no-store').json({ snapshot: account.snapshot, updatedAt: account.updatedAt });
   }));
-  router.put('/data', originGuard, asyncHandler(async (req, res) => {
+  router.put('/data', originGuard, dataLimit, asyncHandler(async (req, res) => {
     const username = requireAccount(req, res);
     const snapshot = syncSchema.parse(req.body);
     const serialized = JSON.stringify(snapshot);

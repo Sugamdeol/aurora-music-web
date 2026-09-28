@@ -55,10 +55,14 @@ function contentSecurityPolicy(production: boolean): Parameters<typeof helmet>[0
 }
 
 function staticCacheHeaders(res: ServerResponse, filePath: string): void {
-  if (/\.(?:html|css|js|map|webmanifest)$/i.test(filePath)) {
-    res.setHeader('Cache-Control', 'no-cache');
-  } else if (/\.[a-f0-9]{8,}\.[a-z0-9]+$/i.test(path.basename(filePath))) {
+  // Fingerprinted build assets change content with their name, so they are
+  // safe to cache forever. Vite emits `name-hash.ext` (dash separator, and
+  // the hash may contain `-`/`_`), e.g. `index-CdFBd-C1.js`. This check must
+  // run before the by-extension rule or hashed css/js never get `immutable`.
+  if (/-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/.test(path.basename(filePath))) {
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  } else if (/\.(?:html|css|js|map|webmanifest)$/i.test(filePath)) {
+    res.setHeader('Cache-Control', 'no-cache');
   }
 }
 
@@ -83,7 +87,8 @@ export function createApp(options: CreateAppOptions = {}): Express {
 
   const api = createApiRouter({ music, audio });
   app.use('/api/v1/sync', createSyncRouter());
-  app.use('/api/sync', createSyncRouter());
+  // The legacy /api/sync compat mount was removed: the session cookie is
+  // path-scoped to /api/v1/sync, so the mount could never authenticate.
   app.use('/api/v1', (req, res, next) => {
     res.locals.apiVersion = 'v1';
     next();

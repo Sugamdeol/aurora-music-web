@@ -242,9 +242,12 @@ export const api = {
 };
 
 export function streamCandidates(track: MediaTrack, quality: 'auto' | 'high' | 'data-saver' = 'auto'): string[] {
-  if (track.streamUrl) return [track.streamUrl];
-  if (track.source === 'local') return [];
   const id = encodeURIComponent(track.id);
   const suffix = quality === 'auto' ? '' : `?quality=${encodeURIComponent(quality)}`;
-  return [`/api/v1/stream/${id}${suffix}`];
+  const resolver = `/api/v1/stream/${id}${suffix}`;
+  // streamUrl is a signed URL that expires within hours. A restored queue or an
+  // expired mid-session URL must still be able to fall back to a fresh
+  // server-side resolution instead of dead-ending with an unrecoverable error.
+  const candidates = track.streamUrl && track.streamUrl !== resolver ? [track.streamUrl, resolver] : [resolver];
+  return track.source === 'local' ? [] : candidates;
 }
