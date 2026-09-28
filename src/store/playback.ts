@@ -27,6 +27,9 @@ interface PlaybackState {
   playbackRate: number;
   shuffle: boolean;
   repeat: RepeatMode;
+  /** Track ids played under shuffle (session-only) so Previous walks what you actually heard. */
+  shuffleHistory: string[];
+  buffered: number;
   fullPlayerOpen: boolean;
   activeSheet: PlayerSheet;
   sourceRevision: number;
@@ -45,6 +48,7 @@ interface PlaybackState {
   setStatus: (status: PlaybackStatus, error?: string) => void;
   setVolume: (volume: number) => void;
   toggleMute: () => void;
+  setBuffered: (seconds: number) => void;
   setPlaybackRate: (rate: number) => void;
   toggleShuffle: () => void;
   cycleRepeat: () => void;
@@ -107,6 +111,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   playbackRate: 1,
   shuffle: false,
   repeat: 'off',
+  shuffleHistory: [],
+  buffered: 0,
   fullPlayerOpen: false,
   activeSheet: null,
   sourceRevision: 0,
@@ -132,7 +138,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   playTracks: (tracks, startIndex = 0, contextLabel = 'Queue') => {
     if (!tracks.length) return;
     const current = updateCurrent([...tracks], startIndex);
-    set({ ...current, contextLabel, autoplayEligible: false, isPlaying: true, status: 'loading', error: undefined, position: 0, duration: current.currentTrack?.durationSeconds ?? 0, sourceRevision: get().sourceRevision + 1 });
+    set({ ...current, contextLabel, autoplayEligible: false, isPlaying: true, status: 'loading', error: undefined, position: 0, buffered: 0, shuffleHistory: [], duration: current.currentTrack?.durationSeconds ?? 0, sourceRevision: get().sourceRevision + 1 });
     persist({ ...get(), ...current });
   },
 
@@ -180,8 +186,10 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       return;
     }
     let index: number;
+    let shuffleHistory = state.shuffleHistory;
     if (state.shuffle && state.queue.length > 1) {
       do { index = Math.floor(Math.random() * state.queue.length); } while (index === state.currentIndex);
+      if (state.currentTrack) shuffleHistory = [...state.shuffleHistory, state.currentTrack.id].slice(-100);
     } else {
       index = state.currentIndex + 1;
       if (index >= state.queue.length) {
@@ -190,7 +198,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       }
     }
     const current = updateCurrent(state.queue, index);
-    set({ ...current, isPlaying: true, status: 'loading', error: undefined, position: 0, duration: current.currentTrack?.durationSeconds ?? 0, sourceRevision: state.sourceRevision + 1 });
+    set({ ...current, isPlaying: true, status: 'loading', error: undefined, position: 0, duration: current.currentTrack?.durationSeconds ?? 0, sourceRevision: state.sourceRevision + 1, shuffleHistory, buffered: 0 });
     persist({ ...state, ...current });
   },
 
@@ -198,9 +206,23 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     const state = get();
     if (state.position > 4) { set({ position: 0 }); return; }
     if (!state.queue.length) return;
+    // Under shuffle, walk back through what actually played (dropping ids that
+    // no longer exist in the queue), not just the previous row.
+    if (state.shuffle && state.shuffleHistory.length) {
+      const history = [...state.shuffleHistory];
+      while (history.length) {
+        const id = history.pop()!;
+        const index = state.queue.findIndex((track, i) => track.id === id && i !== state.currentIndex);
+        if (index < 0) continue;
+        const current = updateCurrent(state.queue, index);
+        set({ ...current, isPlaying: true, status: 'loading', position: 0, duration: current.currentTrack?.durationSeconds ?? 0, sourceRevision: state.sourceRevision + 1, shuffleHistory: history, buffered: 0 });
+        persist({ ...state, ...current });
+        return;
+      }
+    }
     const index = state.currentIndex > 0 ? state.currentIndex - 1 : state.repeat === 'all' ? state.queue.length - 1 : 0;
     const current = updateCurrent(state.queue, index);
-    set({ ...current, isPlaying: true, status: 'loading', position: 0, duration: current.currentTrack?.durationSeconds ?? 0, sourceRevision: state.sourceRevision + 1 });
+    set({ ...current, isPlaying: true, status: 'loading', position: 0, duration: current.currentTrack?.durationSeconds ?? 0, sourceRevision: state.sourceRevision + 1, buffered: 0 });
     persist({ ...state, ...current });
   },
 
@@ -213,13 +235,15 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   setStatus: (status, error) => set({ status, error }),
   setVolume: (volume) => { set({ volume: clamp(volume, 0, 1), muted: false }); persist(get()); },
   toggleMute: () => set((state) => ({ muted: !state.muted })),
+  setBuffered: (seconds) => { if (Number.isFinite(seconds)) set({ buffered: seconds }); },
+  // Shuffle history is per-session context; a fresh queue or toggle resets it.
+  toggleShuffle: () => { set((state) => ({ shuffle: !state.shuffle, shuffleHistory: [] })); persist(get()); },
   setPlaybackRate: (rate) => {
     if (!Number.isFinite(rate)) return;
     const playbackRate = clamp(rate, .5, 2);
     set({ playbackRate });
     void setSetting('player.speed', playbackRate);
   },
-  toggleShuffle: () => { set((state) => ({ shuffle: !state.shuffle })); persist(get()); },
   cycleRepeat: () => {
     set((state) => ({ repeat: state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off' }));
     persist(get());
@@ -291,7 +315,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   },
   clearQueue: () => {
     const current = updateCurrent([], -1);
-    set({ ...current, autoplayEligible: false, isPlaying: false, status: 'idle', position: 0, duration: 0, fullPlayerOpen: false, activeSheet: null, sourceRevision: get().sourceRevision + 1 });
+    set({ ...current, autoplayEligible: false, isPlaying: false, status: 'idle', position: 0, duration: 0, buffered: 0, shuffleHistory: [], fullPlayerOpen: false, activeSheet: null, sourceRevision: get().sourceRevision + 1 });
     persist({ ...get(), ...current });
   },
   retrySource: () => set((state) => ({ sourceRevision: state.sourceRevision + 1, isPlaying: true, status: 'loading', error: undefined })),

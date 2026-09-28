@@ -148,6 +148,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       await db.playlists.delete(id);
       await db.playlistTracks.where('playlistId').equals(id).delete();
     });
+    // Deletions need a tombstone so account sync does not resurrect this
+    // playlist from another device.
+    void import('../lib/sync').then((sync) => sync.recordDeletion(id)).catch(() => undefined);
     set((state) => ({ playlists: state.playlists.filter((playlist) => playlist.id !== id) }));
   },
 

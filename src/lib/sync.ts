@@ -1,18 +1,34 @@
-import { db, type HistoryRecord, type TrackRecord } from './db';
+import { db, getSetting, setSetting, type HistoryRecord, type TrackRecord } from './db';
 import { useLibraryStore } from '../store/library';
+
+// Deletions travel as tombstones — a union-only merge resurrects anything one
+// device deleted (the classic multi-device sync bug). Tombstones expire after
+// 30 days, long after any device plausibly re-syncs.
+interface Tombstone { id: string; deletedAt: number }
+const TOMBSTONE_KEY = 'sync.tombstones';
+const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 interface SyncSnapshot {
   tracks: Array<TrackRecord & { source: 'remote' }>;
   playlists: Array<{ id: string; name: string; description?: string; artwork?: string; createdAt: number; updatedAt: number; trackIds: string[] }>;
   history: Array<Omit<HistoryRecord, 'id'>>;
   settings: { appearance?: Record<string, unknown>; playback?: Record<string, unknown> };
+  tombstones?: Tombstone[];
 }
 interface SyncAccount { username: string }
 const base = '/api/v1/sync';
 let syncInProgress = false;
 let suppressPushUntil = 0;
 let debounceTimer = 0;
+let pullTimer = 0;
 let automaticUnsubscribe: (() => void) | undefined;
+
+export async function recordDeletion(id: string): Promise<void> {
+  const existing = await getSetting<Tombstone[]>(TOMBSTONE_KEY, []);
+  const fresh = existing.filter((item) => item.id !== id && Date.now() - item.deletedAt < TOMBSTONE_TTL_MS);
+  fresh.push({ id, deletedAt: Date.now() });
+  await setSetting(TOMBSTONE_KEY, fresh.slice(-200));
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${base}${path}`, { credentials: 'same-origin', ...init, headers: { ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...init?.headers } });
@@ -39,11 +55,14 @@ function remoteTrack(track: TrackRecord): TrackRecord & { source: 'remote' } {
   return { ...safe, kind: track.kind === 'video' ? 'video' : 'song', source: 'remote' };
 }
 async function localSnapshot(): Promise<SyncSnapshot> {
-  const [tracks, playlists, joins, history, appearance, playback] = await Promise.all([
+  const [tracks, playlists, joins, history, appearance, playback, tombstones] = await Promise.all([
     db.tracks.toArray(), db.playlists.toArray(), db.playlistTracks.toArray(), db.history.orderBy('playedAt').reverse().limit(500).toArray(),
-    db.settings.get('appearance'), db.settings.get('playback'),
+    db.settings.get('appearance'), db.settings.get('playback'), getSetting<Tombstone[]>(TOMBSTONE_KEY, []),
   ]);
-  const eligible = tracks.filter((track) => track.source === 'remote' && (track.likedAt || track.lastPlayedAt || track.id));
+  // Sync tracks the listener actually owns: liked, played, or referenced by a
+  // playlist — not every track that ever passed through the queue.
+  const inPlaylist = new Set(joins.map((join) => join.trackId));
+  const eligible = tracks.filter((track) => track.source === 'remote' && (track.likedAt || track.lastPlayedAt || inPlaylist.has(track.id)));
   const byPlaylist = new Map<string, typeof joins>();
   for (const join of joins) byPlaylist.set(join.playlistId, [...(byPlaylist.get(join.playlistId) ?? []), join]);
   return {
@@ -51,6 +70,7 @@ async function localSnapshot(): Promise<SyncSnapshot> {
     playlists: playlists.slice(0, 100).map(({ id, name, description, artwork, createdAt, updatedAt }) => ({ id, name, description, artwork, createdAt, updatedAt, trackIds: (byPlaylist.get(id) ?? []).sort((a,b)=>a.position-b.position).map((join)=>join.trackId).slice(0,500) })),
     history: history.map(({ id: _id, ...item }) => item),
     settings: { appearance: (appearance?.value as Record<string, unknown> | undefined), playback: (playback?.value as Record<string, unknown> | undefined) },
+    tombstones: tombstones.filter((item) => Date.now() - item.deletedAt < TOMBSTONE_TTL_MS),
   };
 }
 
@@ -72,11 +92,28 @@ async function writeMergedSnapshot(cloud: SyncSnapshot): Promise<void> {
   }
   const historyMap = new Map<string, Omit<HistoryRecord, 'id'>>();
   for (const item of [...(cloud.history ?? []), ...local.history]) historyMap.set(`${item.trackId}:${item.playedAt}`, item);
-  const merged: SyncSnapshot = { tracks: [...tracks.values()].slice(-500).map(remoteTrack), playlists: [...playlists.values()].slice(0,100), history: [...historyMap.values()].sort((a,b)=>b.playedAt-a.playedAt).slice(0,500), settings: { appearance: cloud.settings?.appearance ?? local.settings.appearance, playback: cloud.settings?.playback ?? local.settings.playback } };
+  // Newest deletion wins over any device's older playlist copy.
+  const tombstones = new Map<string, number>();
+  for (const item of [...(cloud.tombstones ?? []), ...(local.tombstones ?? [])]) tombstones.set(item.id, Math.max(item.deletedAt, tombstones.get(item.id) ?? 0));
+  for (const [id, deletedAt] of tombstones) {
+    const playlist = playlists.get(id);
+    if (playlist && deletedAt > playlist.updatedAt) playlists.delete(id);
+  }
+  const merged: SyncSnapshot = { tracks: [...tracks.values()].slice(-500).map(remoteTrack), playlists: [...playlists.values()].slice(0,100), history: [...historyMap.values()].sort((a,b)=>b.playedAt-a.playedAt).slice(0,500), settings: { appearance: cloud.settings?.appearance ?? local.settings.appearance, playback: cloud.settings?.playback ?? local.settings.playback }, tombstones: [...tombstones.entries()].map(([id, deletedAt]) => ({ id, deletedAt })) };
   const remoteIds = new Set(merged.tracks.map((track) => track.id));
+  const survivingIds = new Set(merged.playlists.map((playlist) => playlist.id));
   const oldHist = await db.history.toArray();
   await db.transaction('rw', db.tracks, db.playlists, db.playlistTracks, db.history, db.settings, async () => {
     await db.tracks.bulkPut(merged.tracks);
+    // A playlist deleted on another device disappears here too.
+    for (const [id, deletedAt] of tombstones) {
+      if (survivingIds.has(id)) continue;
+      const localPlaylist = await db.playlists.get(id);
+      if (localPlaylist && deletedAt > localPlaylist.updatedAt) {
+        await db.playlists.delete(id);
+        await db.playlistTracks.where('playlistId').equals(id).delete();
+      }
+    }
     for (const playlist of merged.playlists) {
       const current = await db.playlists.get(playlist.id);
       await db.playlists.put({ id: playlist.id, name: playlist.name, description: playlist.description, artwork: playlist.artwork, createdAt: current?.createdAt ?? playlist.createdAt, updatedAt: Math.max(current?.updatedAt ?? 0, playlist.updatedAt) });
@@ -88,6 +125,7 @@ async function writeMergedSnapshot(cloud: SyncSnapshot): Promise<void> {
     const history = merged.history.filter((item)=>!existing.has(`${item.trackId}:${item.playedAt}`));
     if (history.length) await db.history.bulkAdd(history);
     for (const key of ['appearance','playback'] as const) if (merged.settings[key]) await db.settings.put({ key, value: merged.settings[key], updatedAt: Date.now() });
+    await db.settings.put({ key: TOMBSTONE_KEY, value: (merged.tombstones ?? []).filter((item) => Date.now() - item.deletedAt < TOMBSTONE_TTL_MS), updatedAt: Date.now() });
   });
   await useLibraryStore.getState().bootstrap();
 }
@@ -112,6 +150,27 @@ export function enableAutomaticSync(): void {
     window.clearTimeout(debounceTimer);
     debounceTimer = window.setTimeout(() => { void localSnapshot().then((snapshot)=>request('/data',{method:'PUT',body:JSON.stringify(snapshot)})).catch((error)=>console.warn('Aurora account sync paused:',error)); }, 1800);
   });
-  automaticUnsubscribe = () => { subscribe(); window.clearTimeout(debounceTimer); automaticUnsubscribe = undefined; };
+  // Pushing alone leaves long-lived tabs behind other devices. Pull on focus /
+  // reconnect / every 5 minutes so changes made elsewhere actually arrive.
+  const pull = () => {
+    if (syncInProgress) return;
+    window.clearTimeout(pullTimer);
+    pullTimer = window.setTimeout(() => { void syncLibrary().catch((error) => console.warn('Aurora account sync paused:', error)); }, 400);
+  };
+  const onFocus = () => { if (document.visibilityState !== 'hidden') pull(); };
+  window.addEventListener('focus', onFocus);
+  window.addEventListener('online', pull);
+  document.addEventListener('visibilitychange', onFocus);
+  const interval = window.setInterval(pull, 5 * 60_000);
+  automaticUnsubscribe = () => {
+    subscribe();
+    window.clearTimeout(debounceTimer);
+    window.clearTimeout(pullTimer);
+    window.clearInterval(interval);
+    window.removeEventListener('focus', onFocus);
+    window.removeEventListener('online', pull);
+    document.removeEventListener('visibilitychange', onFocus);
+    automaticUnsubscribe = undefined;
+  };
 }
 export function disableAutomaticSync(): void { automaticUnsubscribe?.(); }

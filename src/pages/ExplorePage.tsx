@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { MediaEntity, MediaTrack } from '../domain/media';
 import { usePlaybackStore } from '../store/playback';
@@ -16,6 +17,7 @@ export function ExplorePage() {
     retry: 1,
   });
   const sections = explore.data?.sections ?? [];
+  const categories = explore.data?.categories ?? [];
   const play = (items: Array<MediaEntity | MediaTrack>, label: string) => {
     const tracks = items.filter((item): item is MediaTrack => 'source' in item);
     if (tracks.length) usePlaybackStore.getState().playTracks(tracks, 0, label);
@@ -30,6 +32,10 @@ export function ExplorePage() {
     <PageHeader title="Explore" description="Charts, fresh releases, and the moods the catalog is pushing right now." />
 
     {explore.isError && <ErrorState title="Explore didn’t load" message={explore.error instanceof Error ? explore.error.message : 'Try again in a moment.'} retry={() => void explore.refetch()} />}
+
+    {categories.length > 0 && <nav className="explore-jump explore-categories" aria-label="Moods and genres">
+      {categories.map((category) => <Link key={category.browseId} to={`/search?q=${encodeURIComponent(category.title)}`} className="explore-jump-chip explore-category-chip">{category.title}</Link>)}
+    </nav>}
 
     {sections.length > 1 && <nav className="explore-jump" aria-label="Jump to a shelf">
       {sections.map((section) => <button key={section.id} type="button" className="plain-button explore-jump-chip" onClick={() => jumpTo(slug(section.id || section.title))}>{section.title}</button>)}

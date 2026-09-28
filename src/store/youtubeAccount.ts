@@ -12,6 +12,9 @@ declare global { interface Window { google?: GoogleIdentity } }
 
 let identityScript: Promise<void> | undefined;
 export function prepareGoogleIdentity(): Promise<void> {
+  // Loading the GSI script when no client id is configured just burns a
+  // request and trips the CSP console error.
+  if (!clientId) return Promise.reject(new Error('Google sign-in is not configured for this site.'));
   if (window.google?.accounts.oauth2) return Promise.resolve();
   identityScript ??= new Promise<void>((resolve, reject) => {
     const script = document.createElement('script');

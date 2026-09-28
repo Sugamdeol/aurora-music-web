@@ -10,6 +10,7 @@ import { mixGains, transitionDuration } from './songTransitions';
 
 type StoreState = ReturnType<typeof usePlaybackStore.getState>;
 const PREPARE_LEAD_SECONDS = 90;
+interface PreparedDeck { audio: HTMLAudioElement; track: MediaTrack; index: number; candidates: string[]; sourceIndex: number; objectUrl?: string }
 
 export class PlaybackEngine {
   private activeAudio = new Audio();
@@ -23,7 +24,7 @@ export class PlaybackEngine {
   private deckNodes = new WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>();
   private deckGains = new WeakMap<HTMLAudioElement, GainNode>();
   private roomUnsubscribe?: () => void;
-  private prepared?: { audio: HTMLAudioElement; track: MediaTrack; index: number; candidates: string[]; sourceIndex: number; objectUrl?: string };
+  private prepared?: PreparedDeck;
   private preparationKey = '';
   private preparationRevision = 0;
   private startingMix = false;
@@ -98,6 +99,7 @@ export class PlaybackEngine {
         if (this.pendingListenSeconds >= 10) this.flushListenTime();
       }
       this.lastListenPosition = position;
+      this.reportBuffered();
       void this.maybeTransition();
     });
     on('waiting', () => { if (!this.fading) this.cancelFade(); this.flushListenTime(); this.lastListenPosition = undefined; store().setStatus('loading'); });
@@ -123,6 +125,7 @@ export class PlaybackEngine {
     });
     on('ended', () => { this.cancelFade(); this.flushListenTime(); void this.handleEnded(); });
     on('error', () => { this.cancelFade(); void this.handleSourceError(); });
+    on('progress', () => this.reportBuffered());
   }
 
   private flushListenTime(): void {
@@ -298,7 +301,9 @@ export class PlaybackEngine {
     if (this.fading) return;
     const state = usePlaybackStore.getState();
     const settings = useLibraryStore.getState().playbackSettings;
-    if (!state.currentTrack || settings.transitionMode === 'off' || state.repeat === 'one' || useRoomStore.getState().status === 'connected' || state.queue.length < 2) {
+    // Always pre-buffer the next deck: with transitions on it becomes the
+    // crossfade partner, with them off it is what makes track changes gapless.
+    if (!state.currentTrack || state.repeat === 'one' || useRoomStore.getState().status === 'connected' || state.queue.length < 2) {
       if (this.preparationKey || this.prepared) this.clearPrepared();
       return;
     }
@@ -315,7 +320,7 @@ export class PlaybackEngine {
       index = choices[Math.floor(Math.random() * choices.length)];
     } else if (index >= state.queue.length && state.repeat === 'all') index = 0;
     const track = state.queue[index];
-    if (!track || !transitionDuration(settings, state.currentTrack, track, this.audio.duration || state.duration)) return;
+    if (!track) return;
     const audio = new Audio();
     audio.preload = 'auto';
     audio.crossOrigin = 'anonymous';
@@ -414,8 +419,56 @@ export class PlaybackEngine {
     this.setDeckVolume(this.audio, usePlaybackStore.getState().volume);
   }
 
+  // Swap to the pre-buffered deck with no audible gap — used when transitions
+  // are off or a planned crossfade never started. (An actively-past mix never
+  // reaches here: the faded-out element no longer owns `ended`.)
+  private adoptPrepared(prepared: PreparedDeck): void {
+    const outgoing = this.audio;
+    this.prepared = undefined;
+    this.preparationKey = '';
+    this.preparationRevision += 1;
+    this.releaseDeck(outgoing, this.objectUrl);
+    this.activeAudio = prepared.audio;
+    this.objectUrl = prepared.objectUrl;
+    this.sourceCandidates = prepared.candidates;
+    this.sourceIndex = prepared.sourceIndex;
+    this.handledTrackId = undefined;
+    this.historyRecordId = undefined;
+    this.pendingListenSeconds = 0;
+    this.lastListenPosition = undefined;
+    this.setDeckVolume(this.audio, usePlaybackStore.getState().volume);
+    const latest = usePlaybackStore.getState();
+    // playTracks bumps sourceRevision by exactly one; seeding the key first
+    // lets applyState adopt this deck instead of reloading it.
+    this.currentKey = `${prepared.track.id}:${latest.sourceRevision + 1}`;
+    latest.playTracks(latest.queue, prepared.index, latest.contextLabel);
+  }
+
+  private reportBuffered(): void {
+    // TimeRanges is missing on some test doubles and exotic embedders — this
+    // must never take down the playback event chain.
+    try {
+      const audio = this.audio;
+      const ranges = audio.buffered;
+      if (!ranges?.length) { usePlaybackStore.getState().setBuffered(0); return; }
+      const position = audio.currentTime || 0;
+      let end = 0;
+      for (let range = 0; range < ranges.length; range += 1) {
+        if (ranges.start(range) <= position + 0.5 && ranges.end(range) >= position - 0.5) {
+          end = Math.max(end, ranges.end(range));
+        }
+      }
+      usePlaybackStore.getState().setBuffered(end);
+    } catch { /* best-effort UI affordance */ }
+  }
+
   private async handleEnded(): Promise<void> {
     const playback = usePlaybackStore.getState();
+    const prepared = this.prepared;
+    if (prepared && !this.fading) {
+      this.adoptPrepared(prepared);
+      return;
+    }
     const atQueueEnd = playback.currentIndex >= playback.queue.length - 1;
     const autoplay = useLibraryStore.getState().playbackSettings.autoplay;
     if (!atQueueEnd || playback.repeat !== 'off' || !autoplay || !playback.currentTrack || playback.currentTrack.source === 'local' || useRoomStore.getState().status === 'connected') {

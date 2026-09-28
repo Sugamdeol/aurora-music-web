@@ -39,7 +39,9 @@ function contentSecurityPolicy(production: boolean): Parameters<typeof helmet>[0
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
         formAction: ["'self'"],
-        scriptSrc: ["'self'", ...(production ? [] : ["'unsafe-inline'", "'unsafe-eval'"])],
+        // accounts.google.com hosts the Google Identity token client loaded by
+        // YouTube sign-in; harmless when the integration is not configured.
+        scriptSrc: ["'self'", 'https://accounts.google.com', ...(production ? [] : ["'unsafe-inline'", "'unsafe-eval'"])],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
         mediaSrc: ["'self'", 'blob:'],
