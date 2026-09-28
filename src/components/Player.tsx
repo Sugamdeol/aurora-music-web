@@ -1,17 +1,25 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { formatDuration } from '../domain/media';
 import { useLibraryStore } from '../store/library';
 import { usePlaybackStore } from '../store/playback';
 import { useRoomStore } from '../room/client';
-import { Artwork, IconButton } from './primitives';
+import { Artwork, IconButton, Marquee } from './primitives';
 import { Icon } from './Icon';
 import { getSetting, setSetting } from '../lib/db';
 import { Link } from 'react-router-dom';
 import { EqualizerControls } from './EqualizerControls';
 import { TrackActions } from './TrackActions';
 import { lyricIndexAt } from '../lib/trackActions';
+import { useDialog } from '../hooks/useDialog';
+
+// Where the dock artwork sat when the full player was opened — the artwork
+// "grows" from this spot (FLIP) instead of just fading in.
+let dockArtworkOrigin: DOMRect | undefined;
+function captureDockArtworkOrigin(): void {
+  dockArtworkOrigin = document.querySelector('.player-dock .artwork')?.getBoundingClientRect();
+}
 
 function PlaybackSpeed() {
   const rate = usePlaybackStore((state) => state.playbackRate);
@@ -41,11 +49,16 @@ function broadcastSeek(): void {
 function Progress() {
   const position = usePlaybackStore((state) => state.position);
   const duration = usePlaybackStore((state) => state.duration);
+  const buffered = usePlaybackStore((state) => state.buffered);
   const seek = usePlaybackStore((state) => state.seek);
   const percent = duration > 0 ? Math.min(100, (position / duration) * 100) : 0;
+  const bufferedPercent = duration > 0 ? Math.min(100, (buffered / duration) * 100) : 0;
   return <div className="progress-wrap progress-large">
     <span>{formatDuration(position)}</span>
-    <input type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} onChange={(event) => { seek(Number(event.target.value)); broadcastSeek(); }} aria-label="Track progress" style={{ '--progress': `${percent}%` } as React.CSSProperties} />
+    <span className="seek-track">
+      <i className="buffer-spine" style={{ '--buffered': `${bufferedPercent}%` } as React.CSSProperties} aria-hidden="true" />
+      <input type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} onChange={(event) => { seek(Number(event.target.value)); broadcastSeek(); }} aria-label="Track progress" style={{ '--progress': `${percent}%` } as React.CSSProperties} />
+    </span>
     <span>{formatDuration(duration)}</span>
   </div>;
 }
@@ -79,6 +92,7 @@ export function PlayerDock() {
   const retry = usePlaybackStore((state) => state.retrySource);
   const openSheet = usePlaybackStore((state) => state.openSheet);
   const liked = useLibraryStore((state) => Boolean(track && state.likedIds.has(track.id)));
+  const buffered = usePlaybackStore((state) => state.buffered);
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
   const consumedSwipe = useRef(false);
 
@@ -89,7 +103,7 @@ export function PlayerDock() {
     if (!start) return;
     const dx = event.clientX - start.x;
     const dy = event.clientY - start.y;
-    if (dy < -45 && Math.abs(dy) > Math.abs(dx)) { consumedSwipe.current = true; openFull(true); }
+    if (dy < -45 && Math.abs(dy) > Math.abs(dx)) { consumedSwipe.current = true; captureDockArtworkOrigin(); openFull(true); }
     else if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy)) {
       consumedSwipe.current = true;
       if (dx < 0) usePlaybackStore.getState().next();
@@ -97,15 +111,18 @@ export function PlayerDock() {
     }
   };
   return <aside className="player-dock glass-surface" aria-label="Now playing">
-    <button className="dock-track" onClick={() => { if (consumedSwipe.current) { consumedSwipe.current = false; return; } openFull(true); }} onPointerDown={(event) => { consumedSwipe.current = false; pointerStart.current = { x: event.clientX, y: event.clientY }; }} onPointerUp={gestureEnd} onPointerCancel={() => { pointerStart.current = null; }}>
+    <button className="dock-track" onClick={() => { if (consumedSwipe.current) { consumedSwipe.current = false; return; } captureDockArtworkOrigin(); openFull(true); }} onPointerDown={(event) => { consumedSwipe.current = false; pointerStart.current = { x: event.clientX, y: event.clientY }; }} onPointerUp={gestureEnd} onPointerCancel={() => { pointerStart.current = null; }}>
       <Artwork src={track.artwork} title={track.title} />
-      <span><strong>{track.title}</strong><small>{track.artist}</small></span>
+      <span><strong><Marquee text={track.title} /></strong><small>{track.artist}</small></span>
     </button>
     <div className="dock-transport">
       <PlaybackControls />
       <div className="dock-timeline">
         <span>{formatDuration(position)}</span>
-        <input className="dock-seek" type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} disabled={!duration} onChange={(event) => { usePlaybackStore.getState().seek(Number(event.target.value)); broadcastSeek(); }} aria-label="Track progress" aria-valuetext={`${formatDuration(position)} of ${formatDuration(duration)}`} style={{ '--progress': `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%` } as React.CSSProperties} />
+        <span className="seek-track">
+          <i className="buffer-spine" style={{ '--buffered': `${duration > 0 ? Math.min(100, (buffered / duration) * 100) : 0}%` } as React.CSSProperties} aria-hidden="true" />
+          <input className="dock-seek" type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} disabled={!duration} onChange={(event) => { usePlaybackStore.getState().seek(Number(event.target.value)); broadcastSeek(); }} aria-label="Track progress" aria-valuetext={`${formatDuration(position)} of ${formatDuration(duration)}`} style={{ '--progress': `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%` } as React.CSSProperties} />
+        </span>
         <span>{formatDuration(duration)}</span>
       </div>
     </div>
@@ -298,25 +315,78 @@ function FullPlayer() {
   const currentIndex = usePlaybackStore((state) => state.currentIndex);
   const shuffle = usePlaybackStore((state) => state.shuffle);
   const nextTrack = shuffle ? undefined : queue[currentIndex + 1];
+  // Escape peels one layer at a time: an open sheet first, then the player.
+  // (The player's listener registers before DetailSheet's, so it must decide.)
+  const dialogRef = useDialog<HTMLDivElement>(open && Boolean(track), () => {
+    const player = usePlaybackStore.getState();
+    if (player.activeSheet) player.openSheet(null);
+    else close();
+  });
+  const artworkWrapRef = useRef<HTMLDivElement>(null);
+  const swipeDrag = useRef<{ startY: number; lastDy: number } | null>(null);
 
-  useEffect(() => {
+  // Artwork grows out of the dock (FLIP) instead of materializing in place.
+  useLayoutEffect(() => {
     if (!open) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') activeSheet ? openSheet(null) : close(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, activeSheet]);
+    const origin = dockArtworkOrigin;
+    dockArtworkOrigin = undefined;
+    const target = artworkWrapRef.current;
+    if (!origin || !target || document.documentElement.classList.contains('reduce-motion')) return;
+    const rect = target.getBoundingClientRect();
+    if (!rect.width) return;
+    const dx = origin.left + origin.width / 2 - (rect.left + rect.width / 2);
+    const dy = origin.top + origin.height / 2 - (rect.top + rect.height / 2);
+    const scale = origin.width / rect.width;
+    if (Math.abs(dx) + Math.abs(dy) < 24) return;
+    void target.animate(
+      [{ transform: `translate(${dx}px, ${dy}px) scale(${scale})`, opacity: .6 }, { transform: 'none', opacity: 1 }],
+      { duration: 340, easing: 'cubic-bezier(.32,.72,.28,1)' },
+    );
+  }, [open, track?.id]);
   useEffect(() => {
     if (!open) return;
     void Promise.all([getSetting('player.lyrics.enabled', true), getSetting('player.lyrics.romanized', true)]).then(([enabled, romanized]) => { setLyricsVisible(enabled); setRomanizedLyrics(romanized); });
   }, [open]);
   if (!open || !track) return null;
-  return <div className="full-player" role="dialog" aria-modal="true" aria-label={`Now playing ${track.title}`}>
+  const swipeDown = {
+    onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
+      if (event.pointerType === 'mouse') return;
+      swipeDrag.current = { startY: event.clientY, lastDy: 0 };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    onPointerMove: (event: React.PointerEvent<HTMLElement>) => {
+      const drag = swipeDrag.current;
+      const sheet = dialogRef.current;
+      if (!drag || !sheet) return;
+      const dy = Math.max(0, event.clientY - drag.startY);
+      drag.lastDy = dy;
+      sheet.style.transform = `translateY(${dy}px)`;
+      sheet.style.opacity = String(Math.max(0.35, 1 - dy / 480));
+    },
+    onPointerUp: () => {
+      const drag = swipeDrag.current;
+      const sheet = dialogRef.current;
+      swipeDrag.current = null;
+      if (!drag || !sheet) return;
+      if (drag.lastDy > 110) { close(); return; }
+      sheet.style.transition = 'transform .28s cubic-bezier(.32,.72,.28,1), opacity .28s';
+      sheet.style.transform = '';
+      sheet.style.opacity = '';
+      window.setTimeout(() => { if (sheet) sheet.style.transition = ''; }, 300);
+    },
+    onPointerCancel: () => {
+      const sheet = dialogRef.current;
+      swipeDrag.current = null;
+      if (sheet) { sheet.style.transform = ''; sheet.style.opacity = ''; }
+    },
+  };
+  return <div className="full-player" ref={dialogRef} role="dialog" aria-modal="true" aria-label={`Now playing ${track.title}`} tabIndex={-1}>
     <div className="player-ambient" style={track.artwork ? { backgroundImage: `url("${track.artwork.replace(/"/g, '%22')}")` } : undefined} />
-    <header className="full-player-top"><IconButton icon="chevron-down" label="Close full player" onClick={close} /><span>Playing from <strong>{context}</strong></span><div className="full-player-top-actions"><IconButton icon="lyrics" label={lyricsVisible ? 'Hide lyrics' : 'Show lyrics'} active={lyricsVisible} onClick={() => { const next = !lyricsVisible; setLyricsVisible(next); void setSetting('player.lyrics.enabled', next); }} /><IconButton icon="queue" label="Open queue" onClick={() => openSheet('queue')} /></div></header>
+    <header className="full-player-top" {...swipeDown}><IconButton icon="chevron-down" label="Close full player" onClick={close} /><span>Playing from <strong>{context}</strong></span><div className="full-player-top-actions"><IconButton icon="lyrics" label={lyricsVisible ? 'Hide lyrics' : 'Show lyrics'} active={lyricsVisible} onClick={() => { const next = !lyricsVisible; setLyricsVisible(next); void setSetting('player.lyrics.enabled', next); }} /><IconButton icon="queue" label="Open queue" onClick={() => openSheet('queue')} /></div></header>
     <div className={`full-player-body ${lyricsVisible ? '' : 'lyrics-hidden'}`}>
       <section className="full-player-media" aria-label="Playback controls">
-        <Artwork className="full-artwork" src={track.artwork} title={track.title} />
-        <div className="full-track-copy"><div><h1>{track.title}</h1><p>{track.artist}{track.album ? <span>{track.album}</span> : null}</p></div><IconButton icon="heart" label={liked ? 'Unlike track' : 'Like track'} active={liked} onClick={() => void toggleLike(track)} /></div>
+        <div className="full-artwork-wrap" ref={artworkWrapRef}><Artwork className="full-artwork" src={track.artwork} title={track.title} /></div>
+        <div className="full-track-copy"><div><h1><Marquee text={track.title} /></h1><p>{track.artist}{track.album ? <span>{track.album}</span> : null}</p></div><IconButton icon="heart" label={liked ? 'Unlike track' : 'Like track'} active={liked} onClick={() => void toggleLike(track)} /></div>
         <Progress />
         <PlaybackControls large />
         <div className="player-tools"><PlaybackSpeed /><div className="seek-buttons"><button onClick={() => { const player = usePlaybackStore.getState(); player.seek(player.position - 10); broadcastSeek(); }} aria-label="Rewind ten seconds">−10s</button><button onClick={() => { const player = usePlaybackStore.getState(); player.seek(player.position + 10); broadcastSeek(); }} aria-label="Forward ten seconds">+10s</button></div></div>
@@ -339,16 +409,9 @@ function FullPlayer() {
 function DetailSheet() {
   const active = usePlaybackStore((state) => state.activeSheet);
   const close = () => usePlaybackStore.getState().openSheet(null);
-  // FullPlayer owns Escape only while it is mounted; sheets opened straight
-  // from the dock still need a keyboard exit.
-  useEffect(() => {
-    if (!active) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [active]);
+  const sheetRef = useDialog<HTMLDivElement>(Boolean(active), close);
   if (!active) return null;
-  return <div className="detail-sheet" role="dialog" aria-modal="true" aria-label={active === 'queue' ? 'Playback queue' : active === 'equalizer' ? 'Equalizer' : 'Sleep timer'}>
+  return <div className="detail-sheet" ref={sheetRef} role="dialog" aria-modal="true" aria-label={active === 'queue' ? 'Playback queue' : active === 'equalizer' ? 'Equalizer' : 'Sleep timer'} tabIndex={-1}>
     <button className="sheet-backdrop" onClick={close} aria-label="Close panel" />
     <div className="sheet-panel glass-surface"><span className="sheet-grabber" /><IconButton icon="x" label="Close panel" className="sheet-close" onClick={close} />{active === 'queue' ? <QueueSheet /> : active === 'equalizer' ? <div className="sheet-content"><div className="sheet-title"><div><span>Fine tune your sound</span><h2>Equalizer</h2></div></div><EqualizerControls /></div> : <SleepSheet />}</div>
   </div>;

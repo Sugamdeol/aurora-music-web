@@ -154,9 +154,11 @@ export function normalizeSuggestions(value: unknown): string[] {
 export function normalizeExploreCategories(value: unknown): ExploreCategory[] {
   return array(value).map((buttonValue) => {
     const button = record(buttonValue);
+    // youtubei.js flattens browse endpoints to endpoint.payload.browseId; older
+    // responses nested them one level deeper, so keep that as a fallback.
     return {
       title: asText(button.button_text ?? button.title),
-      browseId: asText(valueAt(button.endpoint, 'payload', 'browseEndpoint', 'browseId')),
+      browseId: asText(valueAt(button.endpoint, 'payload', 'browseId') ?? valueAt(button.endpoint, 'payload', 'browseEndpoint', 'browseId')),
     };
   }).filter((category) => category.title && category.browseId);
 }

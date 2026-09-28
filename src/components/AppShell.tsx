@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useLibraryStore } from '../store/library';
 import { usePlaybackStore } from '../store/playback';
@@ -6,6 +6,28 @@ import { useRoomStore } from '../room/client';
 import { Icon, type IconName } from './Icon';
 import { IconButton } from './primitives';
 import { PlayerDock, PlayerOverlays } from './Player';
+import { useDialog } from '../hooks/useDialog';
+
+function ShortcutsSheet({ onClose }: { onClose: () => void }) {
+  const ref = useDialog<HTMLDivElement>(true, onClose);
+  const rows: Array<[string, string]> = [
+    ['Space', 'Play / pause'],
+    ['← / →', 'Seek 10 seconds'],
+    ['Shift + ← / →', 'Previous / next song'],
+    ['M', 'Mute'],
+    ['Ctrl / ⌘ + K', 'Search'],
+    ['?', 'This shortcut list'],
+    ['Esc', 'Close player or panel'],
+  ];
+  return <div className="detail-sheet shortcuts-sheet" ref={ref} role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" tabIndex={-1}>
+    <button className="sheet-backdrop" onClick={onClose} aria-label="Close panel" />
+    <div className="sheet-panel glass-surface"><span className="sheet-grabber" /><IconButton icon="x" label="Close panel" className="sheet-close" onClick={onClose} />
+      <div className="sheet-content"><div className="sheet-title"><div><span>Work the keys</span><h2>Keyboard shortcuts</h2></div></div>
+        <table className="shortcuts-table"><tbody>{rows.map(([keys, action]) => <tr key={keys}><th scope="row"><kbd>{keys}</kbd></th><td>{action}</td></tr>)}</tbody></table>
+      </div>
+    </div>
+  </div>;
+}
 
 const primaryNav: Array<{ to: string; label: string; icon: IconName; end?: boolean }> = [
   { to: '/', label: 'Home', icon: 'home', end: true },
@@ -28,6 +50,7 @@ function NavItem({ to, label, icon, end }: { to: string; label: string; icon: Ic
 
 export function AppShell() {
   const navigate = useNavigate();
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const playlists = useLibraryStore((state) => state.playlists);
   const appearance = useLibraryStore((state) => state.appearance);
   const currentTrack = usePlaybackStore((state) => state.currentTrack);
@@ -52,7 +75,33 @@ export function AppShell() {
 
   useEffect(() => {
     const artwork = currentTrack?.artwork;
-    document.documentElement.style.setProperty('--track-artwork', artwork ? `url("${artwork.replace(/["\\]/g, (character) => encodeURIComponent(character))}")` : 'none');
+    const root = document.documentElement;
+    root.style.setProperty('--track-artwork', artwork ? `url("${artwork.replace(/["\\]/g, (character) => encodeURIComponent(character))}")` : 'none');
+    root.dataset.tint = 'false';
+    if (!artwork) return;
+    // Paint the ambient wash from a 24px copy of the artwork instead of a live
+    // 105px CSS blur over the full image — same liquid look, far less GPU.
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    let cancelled = false;
+    image.onload = () => {
+      if (cancelled) return;
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 24;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        const side = Math.min(image.width, image.height);
+        ctx.drawImage(image, (image.width - side) / 2, (image.height - side) / 2, side, side, 0, 0, 24, 24);
+        root.style.setProperty('--track-tint', `url("${canvas.toDataURL('image/jpeg', 0.72)}")`);
+        root.dataset.tint = 'true';
+      } catch {
+        root.dataset.tint = 'false'; // Tainted canvas: keep the live-blur fallback.
+      }
+    };
+    image.onerror = () => { if (!cancelled) root.dataset.tint = 'false'; };
+    image.src = artwork;
+    return () => { cancelled = true; };
   }, [currentTrack?.artwork]);
 
   useEffect(() => {
@@ -65,6 +114,7 @@ export function AppShell() {
       const target = event.target instanceof HTMLElement ? event.target : null;
       const isInteractive = Boolean(target?.closest('button, a, input, textarea, select, [role="button"], [role="tab"], [contenteditable="true"]'));
       if (isInteractive || event.ctrlKey || event.metaKey || event.altKey || document.querySelector('.modal-scrim, .choice-scrim, .detail-sheet')) return;
+      if (event.key === '?') { setShortcutsOpen(true); return; }
       const player = usePlaybackStore.getState();
       if (currentTrack && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
         event.preventDefault();
@@ -109,5 +159,6 @@ export function AppShell() {
     <PlayerDock />
     <nav className="bottom-nav glass-surface" aria-label="Main navigation">{primaryNav.map((item) => <NavItem key={item.to} {...item} />)}</nav>
     <PlayerOverlays />
+    {shortcutsOpen && <ShortcutsSheet onClose={() => setShortcutsOpen(false)} />}
   </div>;
 }

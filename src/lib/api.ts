@@ -216,7 +216,7 @@ export const api = {
 
   async related(id: string, signal?: AbortSignal): Promise<MediaTrack[]> {
     const safeId = encodeURIComponent(id);
-    const body = asRecord(await requestJson([`/api/v1/tracks/${safeId}/related`, `/api/related/${safeId}`], { signal }));
+    const body = asRecord(await requestJson([`/api/v1/related/${safeId}`, `/api/related/${safeId}`], { signal }));
     return asArray(body.sections).flatMap((section, index) => normalizeSection(section, index)?.items ?? [])
       .filter((item): item is MediaTrack => 'source' in item);
   },

@@ -15,6 +15,7 @@ const syncSchema = z.object({
   playlists: z.array(z.object({ id: z.string().max(120), name: z.string().max(64), description: z.string().max(500).optional(), artwork: z.string().max(2000).optional(), createdAt: z.number().finite(), updatedAt: z.number().finite(), trackIds: z.array(z.string().max(120)).max(500) })).max(100),
   history: z.array(z.object({ trackId: z.string().max(120), playedAt: z.number().finite(), listenedSeconds: z.number().finite().optional(), trackTitle: z.string().max(300).optional(), artist: z.string().max(300).optional(), artwork: z.string().max(2000).optional() })).max(500),
   settings: z.object({ appearance: z.record(z.string(), z.unknown()).optional(), playback: z.record(z.string(), z.unknown()).optional() }),
+  tombstones: z.array(z.object({ id: z.string().max(120), deletedAt: z.number().finite() })).max(500).optional(),
 }).strict();
 
 type Snapshot = z.infer<typeof syncSchema>;

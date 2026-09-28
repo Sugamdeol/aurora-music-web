@@ -1,5 +1,44 @@
-import { useEffect, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ImgHTMLAttributes, type PropsWithChildren, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ImgHTMLAttributes, type PropsWithChildren, type ReactNode } from 'react';
 import { Icon, type IconName } from './Icon';
+
+// i.ytimg.com thumbnails exist in fixed tiers; upgrading for hi-DPI displays
+// is free once we know the pattern.
+export function artworkSrcSet(src?: string): string | undefined {
+  if (!src) return undefined;
+  const match = src.match(/^(https:\/\/i\.ytimg\.com\/vi(?:_webp)?\/[^/]+\/)([a-z0-9]+)(\.(?:jpg|webp))?(\?.*)?$/i);
+  if (!match) return undefined;
+  const [, prefix, , suffix = '.jpg', query = ''] = match;
+  const tiers: Array<[string, number]> = [[`${prefix}mqdefault${suffix}${query}`, 320], [`${prefix}hqdefault${suffix}${query}`, 480], [`${prefix}sddefault${suffix}${query}`, 640]];
+  return tiers.map(([url, width]) => `${url} ${width}w`).join(', ');
+}
+
+/** Long titles that overflow their row scroll slowly instead of truncating. */
+export function Marquee({ text, className = '' }: { text: string; className?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [scrolls, setScrolls] = useState(false);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    setScrolls(false);
+    const measure = () => {
+      if (ref.current) setScrolls(ref.current.scrollWidth > ref.current.clientWidth + 4);
+    };
+    const id = window.requestAnimationFrame(measure);
+    // ResizeObserver is missing in test DOMs and some legacy browsers — the
+    // one-time measurement above still catches truncation.
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
+    observer?.observe(node);
+    return () => { window.cancelAnimationFrame(id); observer?.disconnect(); };
+  }, [text]);
+  return <span ref={ref} className={`marquee ${scrolls ? 'is-scrolling' : ''} ${className}`} title={text}>
+    <span
+      className="marquee-track"
+      style={scrolls ? { animationDuration: `${Math.max(8, text.length * 0.3)}s` } : undefined}
+    >
+      <span>{text}</span>{scrolls && <span aria-hidden="true">{text}</span>}
+    </span>
+  </span>;
+}
 
 export function GlassSurface({ className = '', ...props }: HTMLAttributes<HTMLDivElement>) {
   return <div className={`glass-surface ${className}`} {...props} />;
@@ -23,7 +62,7 @@ export function Artwork({ src, title = '', rounded = false, className = '', ...p
   const shape = seed % 3;
   return <span className={`artwork ${rounded ? 'artwork-round' : ''} ${className}`}>
     {src && !failed
-      ? <img src={src} alt={props.alt ?? ''} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(true)} {...props} />
+      ? <img src={src} srcSet={artworkSrcSet(src)} sizes="(max-width: 760px) 30vw, 220px" alt={props.alt ?? ''} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(true)} {...props} />
       : <span className="artwork-fallback" aria-hidden="true">
         <svg viewBox="0 0 120 120" focusable="false">
           <rect width="120" height="120" fill={paper} />

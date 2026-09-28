@@ -7,6 +7,7 @@ import { EmptyState, PageHeader, Pill } from '../components/primitives';
 import { Icon } from '../components/Icon';
 import { filterTracks, shuffledTracks, type TrackSort } from '../lib/collections';
 import { db } from '../lib/db';
+import { useDialog } from '../hooks/useDialog';
 import type { MediaTrack } from '../domain/media';
 
 type Tab = 'recent' | 'liked' | 'top' | 'albums' | 'artists' | 'playlists' | 'local';
@@ -86,6 +87,7 @@ export function LibraryPage() {
     updated.delete('create');
     setParams(updated, { replace: true });
   };
+  const createDialogRef = useDialog<HTMLDivElement>(creating, () => setCreating(false));
   const create = async (event: React.FormEvent) => {
     event.preventDefault();
     if (createBusy) return;
@@ -112,7 +114,7 @@ export function LibraryPage() {
       <button className="library-highlight liked-highlight" onClick={() => changeTab('liked')}><span><Icon name="heart" /></span><div><strong>Liked songs</strong><small>{liked.length} tracks you love</small></div><Icon name="chevron-right" /></button>
       <button className="library-highlight recent-highlight" onClick={() => changeTab('recent')}><span><Icon name="clock" /></span><div><strong>Recently played</strong><small>{recent.length} tracks in your history</small></div><Icon name="chevron-right" /></button>
     </div>
-    <div className="pill-row library-tabs" role="tablist">{tabs.map(([value, label]) => <Pill key={value} selected={tab === value} onClick={() => changeTab(value)} role="tab" aria-selected={tab === value}>{label}</Pill>)}</div>
+    <div className="pill-row library-tabs" role="group" aria-label="Library sections">{tabs.map(([value, label]) => <Pill key={value} selected={tab === value} onClick={() => changeTab(value)} aria-pressed={tab === value}>{label}</Pill>)}</div>
 
     <div className="library-toolbar glass-surface"><label className="library-filter"><Icon name="search" size={18} /><input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={tab === 'playlists' ? 'Find a playlist' : 'Filter by song, artist, or album'} aria-label="Search your library" />{filter && <button onClick={() => setFilter('')} aria-label="Clear library search"><Icon name="x" size={16} /></button>}</label><label className="library-sort"><span>Sort by</span><select aria-label="Sort library" value={tab === 'playlists' && sort !== 'title' ? 'saved' : sort} onChange={(event) => setSort(event.target.value as TrackSort)}><option value="saved">{tab === 'playlists' ? 'Recently updated' : 'Default order'}</option><option value="title">{tab === 'playlists' ? 'Playlist name' : 'Song title'}</option>{tab !== 'playlists' && <><option value="artist">Artist</option><option value="duration">Duration</option></>}</select></label></div>
 
@@ -131,6 +133,6 @@ export function LibraryPage() {
     </section>
 
     <p className="library-footnote">Your library is stored locally. <Link to="/history">Listening history</Link> · <Link to="/settings">Manage storage and backup</Link></p>
-    {creating && <div className="modal-scrim" role="dialog" aria-modal="true" aria-labelledby="playlist-title"><form className="modal-card glass-surface" onSubmit={create}><button type="button" className="modal-close" onClick={() => setCreating(false)} aria-label="Close"><Icon name="x" /></button><Icon name="disc" size={32} /><h2 id="playlist-title">Create a playlist</h2><p>Give this collection a name. You can add songs from any track menu.</p><label>Playlist name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={64} placeholder="Late-night drive" required /></label>{createError && <p className="danger" role="alert">{createError}</p>}<div><button type="button" className="secondary-button" onClick={() => setCreating(false)}>Cancel</button><button className="primary-button" disabled={createBusy || !name.trim()} type="submit">{createBusy ? 'Creating…' : 'Create playlist'}</button></div></form></div>}
+    {creating && <div className="modal-scrim" ref={createDialogRef} role="dialog" aria-modal="true" aria-labelledby="playlist-title" tabIndex={-1}><form className="modal-card glass-surface" onSubmit={create}><button type="button" className="modal-close" onClick={() => setCreating(false)} aria-label="Close"><Icon name="x" /></button><Icon name="disc" size={32} /><h2 id="playlist-title">Create a playlist</h2><p>Give this collection a name. You can add songs from any track menu.</p><label>Playlist name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={64} placeholder="Late-night drive" required /></label>{createError && <p className="danger" role="alert">{createError}</p>}<div><button type="button" className="secondary-button" onClick={() => setCreating(false)}>Cancel</button><button className="primary-button" disabled={createBusy || !name.trim()} type="submit">{createBusy ? 'Creating…' : 'Create playlist'}</button></div></form></div>}
   </div>;
 }

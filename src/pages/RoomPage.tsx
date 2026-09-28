@@ -35,7 +35,7 @@ export function RoomPage() {
 
   return <div className="page room-page">
     <PageHeader title="Listen together" description="Share one queue, one playhead, and the same moment." />
-    <section className={`room-hero glass-surface ${connected ? 'is-connected' : ''}`}><span className="room-orbit"><Icon name="users" size={25} /></span><div><h2>{connected ? (room.role === 'host' ? 'Your listening room' : 'You’re in the room') : 'Music is better shared'}</h2><p>{connected ? `${room.users.filter((user) => user.connected).length} listening now` : 'Create a room or join with a short code. The host stays in control.'}</p></div><span className="connection-state"><i />{room.status === 'connecting' ? 'Connecting' : room.status === 'waiting' ? 'Waiting for host' : connected ? 'Connected' : 'Not connected'}</span></section>
+    <section className={`room-hero glass-surface ${connected ? 'is-connected' : ''}`}><span className="room-orbit"><Icon name="users" size={25} /></span><div><h2>{connected ? (room.role === 'host' ? 'Your listening room' : 'You’re in the room') : 'Music is better shared'}</h2><p>{connected ? `${room.users.filter((user) => user.connected).length} listening now` : 'Create a room or join with a short code. The host stays in control.'}</p></div><span className="connection-state"><i />{room.status === 'connecting' ? 'Connecting' : room.status === 'reconnecting' ? 'Reconnecting' : room.status === 'waiting' ? 'Waiting for host' : connected ? 'Connected' : 'Not connected'}</span></section>
 
     {!connected ? <>
       <div className="room-connect-grid">

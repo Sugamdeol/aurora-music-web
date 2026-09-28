@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { MediaEntity, MediaTrack } from '../domain/media';
 import { formatDuration } from '../domain/media';
@@ -28,7 +28,17 @@ export function SongRow({ track, context = [track], contextLabel = 'Queue', inde
   const removeFromPlaylist = useLibraryStore((state) => state.removeFromPlaylist);
   const removeLocal = useLibraryStore((state) => state.removeLocalTrack);
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const active = current?.id === track.id;
+  // Menus close on Escape and on outside pointer — no orphaned floating menu.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); setMenuOpen(false); } };
+    const onPointer = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false); };
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('pointerdown', onPointer);
+    return () => { window.removeEventListener('keydown', onKey, true); window.removeEventListener('pointerdown', onPointer); };
+  }, [menuOpen]);
 
   const play = () => {
     if (active) usePlaybackStore.getState().togglePlayback();
@@ -38,7 +48,9 @@ export function SongRow({ track, context = [track], contextLabel = 'Queue', inde
   return <article className={`song-row ${active ? 'is-current' : ''}`} style={{ '--row-index': index } as React.CSSProperties}>
     <button className="song-row-art" onClick={play} aria-label={`${active && isPlaying ? 'Pause' : 'Play'} ${track.title}`}>
       <Artwork src={track.artwork} title={track.title} />
-      <span className="song-row-play"><Icon name={active && isPlaying ? 'pause' : 'play'} size={16} /></span>
+      {active && isPlaying
+        ? <span className="song-row-play now-bars" aria-hidden="true"><i /><i /><i /></span>
+        : <span className="song-row-play"><Icon name={active ? 'pause' : 'play'} size={16} /></span>}
     </button>
     <button className="song-row-copy" onClick={play}>
       <strong>{track.title}</strong>
@@ -46,8 +58,8 @@ export function SongRow({ track, context = [track], contextLabel = 'Queue', inde
     </button>
     <span className="song-row-duration">{track.durationLabel || formatDuration(track.durationSeconds)}</span>
     <IconButton icon="heart" label={liked ? 'Remove from liked songs' : 'Add to liked songs'} active={liked} className="song-like" onClick={() => void toggleLike(track)} />
-    <div className="row-menu-wrap">
-      <IconButton icon="more" label={`More options for ${track.title}`} onClick={() => setMenuOpen((open) => !open)} aria-expanded={menuOpen} />
+    <div className="row-menu-wrap" ref={menuRef}>
+      <IconButton icon="more" label={`More options for ${track.title}`} onClick={() => setMenuOpen((open) => !open)} aria-expanded={menuOpen} aria-haspopup="menu" />
       {menuOpen && <div className="row-menu" role="menu">
         <button role="menuitem" onClick={() => { addToQueue(track, true); setMenuOpen(false); }}>Play next</button>
         <button role="menuitem" onClick={() => { addToQueue(track); setMenuOpen(false); }}>Add to queue</button>

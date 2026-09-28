@@ -32,6 +32,9 @@ export function SearchPage() {
   const [query, setQuery] = useState(params.get('q') ?? '');
   const [suggestionQuery, setSuggestionQuery] = useState('');
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  // -1 = focus sits in the input; an index marks the active suggestion
+  // (aria-activedescendant pattern: focus never leaves the combobox).
+  const [activeSuggestion, setActiveSuggestion] = useState(-1);
   const requestedKind = params.get('type') as MediaKind | null;
   const [kind, setKind] = useState<MediaKind>(requestedKind && kinds.some(([value]) => value === requestedKind) ? requestedKind : 'song');
   const [scope, setScope] = useState<'catalog' | 'library'>('catalog');
@@ -120,19 +123,40 @@ export function SearchPage() {
     <div className="search-wrap">
       <form className="search-field glass-surface" onSubmit={(event) => { setSuggestionsOpen(false); submit(event); }}>
         <Icon name="search" />
-        <input data-search-input name="q" type="search" role="combobox" value={input} onFocus={() => setSuggestionsOpen(true)} onBlur={() => window.setTimeout(() => setSuggestionsOpen(false), 130)} onKeyDown={(event) => { if (event.key === 'Escape') setSuggestionsOpen(false); }} onChange={(event) => { setInput(event.target.value); setSuggestionsOpen(true); }} placeholder="Search songs, artists, albums" autoComplete="off" aria-label="Search music" aria-autocomplete="list" aria-expanded={suggestionsOpen && Boolean(suggestionResults.data?.length)} aria-haspopup="listbox" aria-controls="search-suggestions" />
+        <input data-search-input name="q" type="search" role="combobox" value={input} onFocus={() => setSuggestionsOpen(true)} onBlur={() => window.setTimeout(() => setSuggestionsOpen(false), 130)} onKeyDown={(event) => {
+          const options = suggestionResults.data ?? [];
+          if (event.key === 'Escape') { setSuggestionsOpen(false); setActiveSuggestion(-1); return; }
+          if (!suggestionsOpen || !options.length) return;
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            setActiveSuggestion((current) => {
+              const nextIndex = event.key === 'ArrowDown' ? current + 1 : current - 1;
+              if (nextIndex < 0) return -1;
+              if (nextIndex >= options.length) return 0;
+              return nextIndex;
+            });
+          } else if (event.key === 'Enter' && activeSuggestion >= 0 && options[activeSuggestion]) {
+            event.preventDefault();
+            const chosen = options[activeSuggestion];
+            setInput(chosen); setQuery(chosen); setSuggestionsOpen(false);
+            setActiveSuggestion(-1);
+          } else if (event.key === 'Tab') {
+            setSuggestionsOpen(false);
+            setActiveSuggestion(-1);
+          }
+        }} onChange={(event) => { setInput(event.target.value); setSuggestionsOpen(true); setActiveSuggestion(-1); }} placeholder="Search songs, artists, albums" autoComplete="off" aria-label="Search music" aria-autocomplete="list" aria-expanded={suggestionsOpen && Boolean(suggestionResults.data?.length)} aria-haspopup="listbox" aria-controls="search-suggestions" aria-activedescendant={activeSuggestion >= 0 ? `search-suggestion-${activeSuggestion}` : undefined} />
         {input && <button type="button" onClick={() => setInput('')} aria-label="Clear search"><Icon name="x" size={17} /></button>}
         <button type="submit" className="search-go" aria-label="Run search"><Icon name="chevron-right" /></button>
       </form>
       {suggestionsOpen && Boolean(suggestionResults.data?.length) && <div className="search-suggestions glass-surface" id="search-suggestions" role="listbox" aria-label="Search suggestions">
-        {suggestionResults.data?.map((suggestion) => <button type="button" role="option" aria-selected="false" key={suggestion} onMouseDown={(event) => event.preventDefault()} onClick={() => { setInput(suggestion); setQuery(suggestion); setSuggestionsOpen(false); }}><Icon name="search" size={16} /><span>{suggestion}</span><Icon name="arrow-left" size={14} className="suggestion-arrow" /></button>)}
+        {suggestionResults.data?.map((suggestion, index) => <button type="button" role="option" id={`search-suggestion-${index}`} aria-selected={index === activeSuggestion} className={index === activeSuggestion ? 'is-active' : ''} key={suggestion} tabIndex={-1} onMouseDown={(event) => event.preventDefault()} onClick={() => { setInput(suggestion); setQuery(suggestion); setSuggestionsOpen(false); setActiveSuggestion(-1); }}><Icon name="search" size={16} /><span>{suggestion}</span><Icon name="arrow-left" size={14} className="suggestion-arrow" /></button>)}
       </div>}
     </div>
-    <div className="search-scopes" role="tablist" aria-label="Search location">
-      <button role="tab" aria-selected={scope === 'catalog'} className={scope === 'catalog' ? 'is-selected' : ''} onClick={() => setScope('catalog')}>Aurora Music</button>
-      <button role="tab" aria-selected={scope === 'library'} className={scope === 'library' ? 'is-selected' : ''} onClick={() => setScope('library')}>Your Library</button>
+    <div className="search-scopes" role="group" aria-label="Search location">
+      <button aria-pressed={scope === 'catalog'} className={scope === 'catalog' ? 'is-selected' : ''} onClick={() => setScope('catalog')}>Aurora Music</button>
+      <button aria-pressed={scope === 'library'} className={scope === 'library' ? 'is-selected' : ''} onClick={() => setScope('library')}>Your Library</button>
     </div>
-    {scope === 'catalog' && <div className="pill-row search-kinds" role="tablist" aria-label="Search category">{kinds.map(([value, label]) => <Pill key={value} selected={kind === value} onClick={() => setKind(value)} role="tab" aria-selected={kind === value}>{label}</Pill>)}</div>}
+    {scope === 'catalog' && <div className="pill-row search-kinds" role="group" aria-label="Search category">{kinds.map(([value, label]) => <Pill key={value} selected={kind === value} onClick={() => setKind(value)} aria-pressed={kind === value}>{label}</Pill>)}</div>}
 
     {query ? <section className="search-results" aria-live="polite">
       {remote.isLoading && scope === 'catalog' && kind !== 'local' && <div className="search-loading">{[1, 2, 3, 4, 5].map((item) => <Skeleton key={item} className="row-skeleton" />)}</div>}

@@ -83,7 +83,11 @@
 .track-action-message { margin: 0; color: var(--muted); font-size: 11px; }
 .next-track-card { gap: 10px; padding: 9px 11px; border-radius: 15px; }
 .next-track-card > .artwork { width: 39px; height: 39px; }
-.player-keyboard-hint { display: none; }
+.player-keyboard-hint { color: var(--quiet); text-align: center; font-size: 12px; }
+@media (max-width: 900px) {
+  /* Keyboard hints mean nothing on touch screens */
+  .player-keyboard-hint { display: none; }
+}
 .full-player-lyrics { height: min(72vh, 650px); min-height: 340px; padding: 23px 26px 16px; border-radius: 25px; }
 .full-player-lyrics > header h2 { font-size: 22px; }
 .full-player-lyrics .lyrics-view-full .lyric-lines { padding-top: 25px; }
@@ -154,3 +158,75 @@
 }
 .setting-block input[type="range"] { width:clamp(90px,18vw,150px);accent-color:var(--accent);cursor:pointer; }
 .transition-note { margin:10px 16px;color:var(--muted);font-size:12px;line-height:1.5; }
+
+/* ============================================================
+   Phase 2 — interaction polish
+   ============================================================ */
+
+/* Buffered-range spine under both seek bars */
+.seek-track { position: relative; flex: 1; display: flex; }
+.seek-track input[type="range"] { flex: 1; width: 100%; }
+.buffer-spine {
+  position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
+  height: 3px; border-radius: 3px; pointer-events: none;
+  background: linear-gradient(to right, rgba(255,255,255,.2) var(--buffered, 0%), transparent var(--buffered, 0%));
+}
+:root[data-theme="light"] .buffer-spine { background: linear-gradient(to right, rgba(30,40,28,.2) var(--buffered, 0%), transparent var(--buffered, 0%)); }
+
+/* Slow-scrolling titles instead of hard truncation */
+.marquee { display: block; overflow: hidden; white-space: nowrap; }
+.marquee-track { display: inline-flex; gap: 3rem; white-space: nowrap; }
+.marquee.is-scrolling .marquee-track { animation: marquee-slide linear infinite; will-change: transform; }
+@keyframes marquee-slide { from { transform: translateX(0); } to { transform: translateX(calc(-50% - 1.5rem)); } }
+.reduce-motion .marquee.is-scrolling .marquee-track { animation: none; }
+.dock-track>span { min-width: 0; }
+
+/* Now-playing bars on the current song row */
+.now-bars { display: inline-flex; align-items: flex-end; gap: 2.5px; height: 13px; }
+.now-bars i { width: 3px; border-radius: 2px; background: var(--accent); animation: now-bar 1.1s ease-in-out infinite; }
+.now-bars i:nth-child(1) { height: 42%; animation-delay: -.55s; }
+.now-bars i:nth-child(2) { height: 92%; animation-delay: -.25s; }
+.now-bars i:nth-child(3) { height: 64%; }
+@keyframes now-bar { 0%,100% { transform: scaleY(.4); } 50% { transform: scaleY(1); } }
+.reduce-motion .now-bars i { animation: none; }
+
+/* Keyboard users see the play affordance too, not just the focus ring */
+.song-row-art:focus-visible .song-row-play { opacity: 1; transform: none; }
+
+/* Real mood/genre categories on Explore */
+.explore-categories { margin-bottom: 18px; }
+a.explore-jump-chip, a.explore-category-chip { text-decoration: none; display: inline-flex; align-items: center; }
+
+/* Keyboard shortcuts sheet */
+.shortcuts-table { width: 100%; border-collapse: collapse; }
+.shortcuts-table th, .shortcuts-table td { text-align: left; padding: 8px 6px; font-weight: 500; font-size: 13.5px; }
+.shortcuts-table th { width: 42%; }
+.shortcuts-table tr + tr th, .shortcuts-table tr + tr td { border-top: 1px solid var(--line); }
+.shortcuts-table kbd { background: var(--surface-2); border: 1px solid var(--line-bright); border-bottom-width: 2px; border-radius: 6px; padding: 2px 7px; font: 600 11.5px Manrope, sans-serif; }
+
+/* Library album/artist cards (were completely unstyled) */
+.library-groups .library-group { display: grid; gap: 7px; align-items: start; text-align: left; color: inherit; padding: 0; border: 0; background: none; cursor: pointer; }
+.library-group-art { position: relative; width: 100%; aspect-ratio: 1; border-radius: 14px; overflow: hidden; display: grid; place-items: center; background: var(--surface-2); color: var(--quiet); transition: transform .2s ease; }
+.library-group.is-artist .library-group-art { border-radius: 50%; }
+.library-group-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.library-group:hover .library-group-art { transform: scale(1.025); }
+.library-group strong { font-size: 14px; line-height: 1.25; }
+.library-group small { color: var(--quiet); font-size: 12px; }
+
+/* Full player: artwork wrapper holds the FLIP morph target */
+.full-artwork-wrap { width: 100%; }
+.full-artwork-wrap .full-artwork { width: 100%; }
+
+/* Song-row bars sit inside the same overlay positioning as the play icon */
+.song-row-play.now-bars { display: inline-flex; justify-content: center; }
+
+/* Pre-tinted artwork replaces live 105px+ blurs once the canvas copy is ready */
+:root[data-tint="true"] .song-ambient {
+  background-image: radial-gradient(ellipse at 50% 50%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 66%), var(--track-tint);
+  filter: blur(34px) saturate(1.36) brightness(.36);
+}
+:root[data-tint="true"][data-theme="light"] .song-ambient { filter: blur(38px) saturate(1.24) brightness(1.05); }
+:root[data-tint="true"] .player-ambient {
+  background-image: var(--track-tint);
+  filter: blur(40px) saturate(1.3) brightness(.5);
+}
