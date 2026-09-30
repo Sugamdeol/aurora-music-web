@@ -60,6 +60,46 @@ afterEach(() => {
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 
 describe('audio transitions', () => {
+  it('buffers one next song early and reuses it when Next is tapped', async () => {
+    usePlaybackStore.getState().playTracks(tracks);
+    await settle();
+    const outgoing = engine.audio;
+    const prepared = AudioDeck.instances.at(-1)!;
+    expect(prepared).not.toBe(outgoing);
+    expect(prepared.src).toBe('/test-audio');
+    prepared.dispatchEvent(new Event('canplay'));
+    expect(usePlaybackStore.getState().nextReady).toBe(true);
+    usePlaybackStore.getState().next();
+    await settle();
+    expect(engine.audio).toBe(prepared);
+    expect(prepared.paused).toBe(false);
+    expect(usePlaybackStore.getState().currentTrack?.id).toBe('two');
+  });
+  it('replaces a prepared deck when the next queue item changes', async () => {
+    usePlaybackStore.getState().playTracks(tracks);
+    await settle();
+    const oldPrepared = AudioDeck.instances.at(-1)!;
+    usePlaybackStore.getState().reorderQueue(2, 1);
+    await settle();
+    expect(oldPrepared.src).toBe('');
+    (engine.audio as unknown as AudioDeck).tick(195);
+    await settle();
+    expect(usePlaybackStore.getState().currentTrack?.id).toBe('three');
+  });
+  it('keeps shuffle history across a crossfade', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    usePlaybackStore.setState({ shuffle: true, shuffleHistory: ['three'] });
+    usePlaybackStore.getState().playTracks(tracks);
+    usePlaybackStore.setState({ shuffleHistory: ['three'] });
+    await settle();
+    (engine.audio as unknown as AudioDeck).tick(195);
+    await settle();
+    expect(usePlaybackStore.getState().shuffleHistory).toEqual(['three', 'one']);
+    usePlaybackStore.getState().previous();
+    await settle();
+    expect(usePlaybackStore.getState().currentTrack?.id).toBe('one');
+  });
+
   it('keeps adding unique songs after a playlist ends', async () => {
     useLibraryStore.setState({ playbackSettings: { ...DEFAULT_PLAYBACK_SETTINGS, transitionMode: 'off', autoplay: true } });
     const fourth = { ...tracks[0], id: 'four' };
