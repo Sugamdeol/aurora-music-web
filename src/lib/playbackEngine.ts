@@ -9,7 +9,6 @@ import { useRoomStore } from '../room/client';
 import { mixGains, transitionDuration } from './songTransitions';
 
 type StoreState = ReturnType<typeof usePlaybackStore.getState>;
-const PREPARE_LEAD_SECONDS = 90;
 interface PreparedDeck { audio: HTMLAudioElement; track: MediaTrack; index: number; candidates: string[]; sourceIndex: number; objectUrl?: string }
 
 export class PlaybackEngine {
@@ -27,6 +26,8 @@ export class PlaybackEngine {
   private prepared?: PreparedDeck;
   private preparationKey = '';
   private preparationRevision = 0;
+  private failedPreparationKey = '';
+  private prepareRetryAt = 0;
   private startingMix = false;
   private fading?: { audio: HTMLAudioElement; objectUrl?: string; start: number; duration: number; outgoingGain: number; incomingGain: number };
   private fadeTimer?: number;
@@ -103,7 +104,7 @@ export class PlaybackEngine {
       void this.maybeTransition();
     });
     on('waiting', () => { if (!this.fading) this.cancelFade(); this.flushListenTime(); this.lastListenPosition = undefined; store().setStatus('loading'); });
-    on('canplay', () => store().setStatus(this.audio.paused ? 'ready' : 'playing'));
+    on('canplay', () => { store().setStatus(this.audio.paused ? 'ready' : 'playing'); void this.prepareNext(); });
     on('playing', () => {
       store().setStatus('playing');
       const track = store().currentTrack;
@@ -138,6 +139,13 @@ export class PlaybackEngine {
 
   private async applyState(state: StoreState, previous: StoreState): Promise<void> {
     if (this.destroyed) return;
+    // Buffer/readiness indicators are UI-only; avoid re-entering track loads.
+    if ((state.nextReady !== previous.nextReady || state.buffered !== previous.buffered)
+      && state.currentTrack === previous.currentTrack && state.queue === previous.queue
+      && state.sourceRevision === previous.sourceRevision && state.isPlaying === previous.isPlaying
+      && state.position === previous.position && state.duration === previous.duration
+      && state.volume === previous.volume && state.muted === previous.muted
+      && state.playbackRate === previous.playbackRate && state.shuffle === previous.shuffle && state.repeat === previous.repeat) return;
     // HTMLAudioElement emits several clock ticks each second. A clock-only
     // update should not reconfigure audio, inspect the queue, or prepare a deck.
     if (state.position !== previous.position && state.currentTrack === previous.currentTrack
@@ -151,7 +159,7 @@ export class PlaybackEngine {
         this.cancelFade();
         try { this.audio.currentTime = state.position; this.lastListenPosition = state.position; } catch { /* metadata not ready */ }
       }
-      if (state.isPlaying && (state.duration - state.position) / state.playbackRate <= PREPARE_LEAD_SECONDS) void this.prepareNext();
+      if (state.isPlaying) void this.prepareNext();
       if (state.isPlaying && state.queue.length - state.currentIndex === 1) void this.ensureUpcoming();
       this.updatePositionState();
       return;
@@ -164,7 +172,19 @@ export class PlaybackEngine {
     const key = state.currentTrack ? `${state.currentTrack.id}:${state.sourceRevision}` : '';
     if (key !== this.currentKey) {
       this.cancelFade();
-      this.clearPrepared();
+      const reuse = this.prepared && this.prepared.track.id === state.currentTrack?.id && this.prepared.audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA ? this.prepared : undefined;
+      if (reuse) {
+        this.prepared = undefined;
+        this.preparationKey = '';
+        this.preparationRevision += 1;
+        this.releaseDeck(this.audio, this.objectUrl);
+        this.activeAudio = reuse.audio;
+        this.objectUrl = reuse.objectUrl;
+        this.sourceCandidates = reuse.candidates;
+        this.sourceIndex = reuse.sourceIndex;
+        state.setNextReady(false);
+        this.setDeckVolume(this.audio, state.volume);
+      } else this.clearPrepared();
       this.flushListenTime();
       this.currentKey = key;
       this.handledTrackId = undefined;
@@ -178,12 +198,11 @@ export class PlaybackEngine {
         return;
       }
       const revision = ++this.loadRevision;
-      await this.loadTrack(state.currentTrack, revision);
+      if (!reuse) await this.loadTrack(state.currentTrack, revision);
       if (key !== this.currentKey) return;
     }
     const liveState = usePlaybackStore.getState();
     if (liveState.isPlaying) void this.ensureUpcoming();
-    this.warmUpcoming(liveState);
     void this.prepareNext();
     if (Math.abs((this.audio.currentTime || 0) - liveState.position) > 1.25 && Number.isFinite(liveState.position)) {
       this.cancelFade();
@@ -204,17 +223,6 @@ export class PlaybackEngine {
     if (liveState.currentTrack !== previous.currentTrack) this.updateMediaSession(liveState.currentTrack);
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = liveState.isPlaying ? 'playing' : 'paused';
     if (liveState.position !== previous.position || liveState.duration !== previous.duration || liveState.playbackRate !== previous.playbackRate) this.updatePositionState();
-  }
-
-  private warmUpcoming(state: StoreState): void {
-    if (!state.isPlaying || !state.currentTrack || state.shuffle || state.repeat === 'one') return;
-    const next = state.queue[state.currentIndex + 1] ?? (state.repeat === 'all' ? state.queue[0] : undefined);
-    if (!next || next.source !== 'remote') return;
-    const quality = useLibraryStore.getState().playbackSettings.preferredQuality;
-    const key = `${state.currentTrack.id}:${state.currentIndex}:${next.id}:${quality}`;
-    if (key === this.lastWarmKey) return;
-    this.lastWarmKey = key;
-    void api.warmStream(next, quality).catch(() => undefined);
   }
 
   private async loadTrack(track: MediaTrack, revision: number): Promise<void> {
@@ -295,6 +303,7 @@ export class PlaybackEngine {
     this.preparationKey = '';
     if (this.prepared) this.releaseDeck(this.prepared.audio, this.prepared.objectUrl);
     this.prepared = undefined;
+    usePlaybackStore.getState().setNextReady(false);
   }
 
   private async prepareNext(): Promise<void> {
@@ -307,10 +316,13 @@ export class PlaybackEngine {
       if (this.preparationKey || this.prepared) this.clearPrepared();
       return;
     }
-    if (!this.prepared && (!state.isPlaying || !state.duration || (state.duration - state.position) / state.playbackRate > PREPARE_LEAD_SECONDS)) return;
+    // Start only once the selected song can play. Buffer one successor early
+    // so slow extraction on a small server has the whole song to finish.
+    if (!this.prepared && (!state.isPlaying || this.audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA)) return;
     const nextKey = state.shuffle ? state.queue.length : state.queue[state.currentIndex + 1]?.id ?? (state.repeat === 'all' ? state.queue[0]?.id : 'end');
-    const key = `${this.currentKey}:${state.currentIndex}:${nextKey}:${state.shuffle}:${state.repeat}:${settings.transitionMode}:${settings.preferredQuality}:${Math.round(state.duration)}`;
-    if (key === this.preparationKey) return;
+    const fingerprint = state.queue.map(track => track.id).join('|');
+    const key = `${this.currentKey}:${state.currentIndex}:${fingerprint}:${nextKey}:${state.shuffle}:${state.repeat}:${settings.transitionMode}:${settings.preferredQuality}:${Math.round(state.duration)}`;
+    if (key === this.preparationKey || (key === this.failedPreparationKey && Date.now() < this.prepareRetryAt)) return;
     this.clearPrepared();
     this.preparationKey = key;
     const revision = this.preparationRevision;
@@ -338,19 +350,28 @@ export class PlaybackEngine {
     if (revision !== this.preparationRevision) { if (objectUrl) URL.revokeObjectURL(objectUrl); return; }
     const prepared = { audio, track, index, candidates, sourceIndex: 0, objectUrl };
     this.prepared = prepared;
+    usePlaybackStore.getState().setNextReady(false);
     this.bindEvents(audio);
     this.connectDeck(audio);
     audio.addEventListener('canplay', () => {
-      if (this.prepared === prepared) void this.maybeTransition();
+      if (this.prepared === prepared) { usePlaybackStore.getState().setNextReady(true); void this.maybeTransition(); }
     });
     audio.addEventListener('error', () => {
       if (this.prepared !== prepared) return;
       if (prepared.sourceIndex + 1 < candidates.length) {
         audio.src = candidates[++prepared.sourceIndex];
         audio.load();
-      } else { this.prepared = undefined; this.releaseDeck(audio, objectUrl); }
+      } else {
+        this.failedPreparationKey = key;
+        this.prepareRetryAt = Date.now() + 15000;
+        this.preparationKey = '';
+        this.prepared = undefined;
+        usePlaybackStore.getState().setNextReady(false);
+        this.releaseDeck(audio, objectUrl);
+      }
     });
-    audio.src = candidates[0] || '';
+    const nextSource = candidates[0] || '';
+    audio.src = nextSource.startsWith('/api/v1/stream/') ? `${nextSource}${nextSource.includes('?') ? '&' : '?'}prefetch=1` : nextSource;
     audio.load();
   }
 
@@ -388,7 +409,9 @@ export class PlaybackEngine {
       this.fading = { audio: outgoing, objectUrl: outgoingUrl, start: this.audio.currentTime, duration: Math.min(seconds, remaining) * state.playbackRate, outgoingGain: 1, incomingGain: 0 };
       const latest = usePlaybackStore.getState();
       this.currentKey = `${prepared.track.id}:${latest.sourceRevision + 1}`;
+      const history = latest.shuffle && latest.currentTrack ? [...latest.shuffleHistory, latest.currentTrack.id].slice(-100) : latest.shuffleHistory;
       latest.playTracks(latest.queue, prepared.index, latest.contextLabel);
+      usePlaybackStore.setState({ autoplayEligible: latest.autoplayEligible, shuffleHistory: history, nextReady: false });
       latest.setDuration(this.audio.duration);
       latest.setPosition(this.audio.currentTime);
       this.audio.dispatchEvent(new Event('playing'));
@@ -441,7 +464,9 @@ export class PlaybackEngine {
     // playTracks bumps sourceRevision by exactly one; seeding the key first
     // lets applyState adopt this deck instead of reloading it.
     this.currentKey = `${prepared.track.id}:${latest.sourceRevision + 1}`;
+    const history = latest.shuffle && latest.currentTrack ? [...latest.shuffleHistory, latest.currentTrack.id].slice(-100) : latest.shuffleHistory;
     latest.playTracks(latest.queue, prepared.index, latest.contextLabel);
+    usePlaybackStore.setState({ autoplayEligible: latest.autoplayEligible, shuffleHistory: history, nextReady: false });
   }
 
   private reportBuffered(): void {
@@ -465,7 +490,7 @@ export class PlaybackEngine {
   private async handleEnded(): Promise<void> {
     const playback = usePlaybackStore.getState();
     const prepared = this.prepared;
-    if (prepared && !this.fading) {
+    if (prepared && !this.fading && playback.repeat !== 'one' && playback.queue[prepared.index]?.id === prepared.track.id && prepared.audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
       this.adoptPrepared(prepared);
       return;
     }
