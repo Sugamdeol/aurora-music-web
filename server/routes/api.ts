@@ -437,7 +437,9 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
     try {
       let upstream: Response | undefined;
       for (let attempt = 0; attempt < 2; attempt += 1) {
-        const format = await audio.getAudioFormat(id, attempt > 0, quality);
+        const format = req.query.prefetch === '1'
+          ? await audio.getAudioFormat(id, attempt > 0, quality, 'background')
+          : await audio.getAudioFormat(id, attempt > 0, quality);
         const headers = new Headers(format.httpHeaders);
         if (range) headers.set('Range', range);
 
