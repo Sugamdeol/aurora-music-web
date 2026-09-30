@@ -30,6 +30,8 @@ interface PlaybackState {
   /** Track ids played under shuffle (session-only) so Previous walks what you actually heard. */
   shuffleHistory: string[];
   buffered: number;
+  nextReady: boolean;
+  setNextReady: (ready: boolean) => void;
   fullPlayerOpen: boolean;
   activeSheet: PlayerSheet;
   sourceRevision: number;
@@ -116,6 +118,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   repeat: 'off',
   shuffleHistory: [],
   buffered: 0,
+  nextReady: false,
+  setNextReady: (nextReady) => { if (get().nextReady !== nextReady) set({ nextReady }); },
   fullPlayerOpen: false,
   activeSheet: null,
   sourceRevision: 0,
