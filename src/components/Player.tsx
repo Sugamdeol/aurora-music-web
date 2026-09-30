@@ -46,6 +46,26 @@ function broadcastSeek(): void {
   }, 320);
 }
 
+function BufferStatus() {
+  const track = usePlaybackStore((state) => state.currentTrack);
+  const status = usePlaybackStore((state) => state.status);
+  const duration = usePlaybackStore((state) => state.duration);
+  const buffered = usePlaybackStore((state) => state.buffered);
+  const nextReady = usePlaybackStore((state) => state.nextReady);
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    setSlow(false);
+    if (status !== 'loading') return;
+    const timer = window.setTimeout(() => setSlow(true), 12000);
+    return () => window.clearTimeout(timer);
+  }, [status, track?.id]);
+  const loaded = duration > 0 ? Math.min(100, Math.floor(buffered / duration * 100)) : 0;
+  return <div className="buffer-status">
+    <span>{status === 'loading' ? (slow ? 'Taking a little longer…' : 'Getting your song ready…') : `${loaded}% buffered${nextReady ? ' · Next song ready' : ''}`}</span>
+    {slow && status === 'loading' && <button onClick={() => usePlaybackStore.getState().retrySource()}>Retry</button>}
+  </div>;
+}
+
 function Progress() {
   const position = usePlaybackStore((state) => state.position);
   const duration = usePlaybackStore((state) => state.duration);
@@ -53,14 +73,14 @@ function Progress() {
   const seek = usePlaybackStore((state) => state.seek);
   const percent = duration > 0 ? Math.min(100, (position / duration) * 100) : 0;
   const bufferedPercent = duration > 0 ? Math.min(100, (buffered / duration) * 100) : 0;
-  return <div className="progress-wrap progress-large">
+  return <div className="timeline-detail"><div className="progress-wrap progress-large">
     <span>{formatDuration(position)}</span>
-    <span className="seek-track">
+    <span className="seek-track" style={{ '--buffered': `${bufferedPercent}%` } as React.CSSProperties}>
       <i className="buffer-spine" style={{ '--buffered': `${bufferedPercent}%` } as React.CSSProperties} aria-hidden="true" />
       <input type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} onChange={(event) => { seek(Number(event.target.value)); broadcastSeek(); }} aria-label="Track progress" style={{ '--progress': `${percent}%` } as React.CSSProperties} />
     </span>
     <span>{formatDuration(duration)}</span>
-  </div>;
+  </div><BufferStatus /></div>;
 }
 
 function PlaybackControls({ large = false }: { large?: boolean }) {
@@ -119,12 +139,13 @@ export function PlayerDock() {
       <PlaybackControls />
       <div className="dock-timeline">
         <span>{formatDuration(position)}</span>
-        <span className="seek-track">
+        <span className="seek-track" style={{ '--buffered': `${duration > 0 ? Math.min(100, buffered / duration * 100) : 0}%` } as React.CSSProperties}>
           <i className="buffer-spine" style={{ '--buffered': `${duration > 0 ? Math.min(100, (buffered / duration) * 100) : 0}%` } as React.CSSProperties} aria-hidden="true" />
           <input className="dock-seek" type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} disabled={!duration} onChange={(event) => { usePlaybackStore.getState().seek(Number(event.target.value)); broadcastSeek(); }} aria-label="Track progress" aria-valuetext={`${formatDuration(position)} of ${formatDuration(duration)}`} style={{ '--progress': `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%` } as React.CSSProperties} />
         </span>
         <span>{formatDuration(duration)}</span>
       </div>
+      <BufferStatus />
     </div>
     <div className="dock-actions">
       <IconButton icon="heart" label={liked ? 'Remove from liked songs' : 'Add to liked songs'} active={liked} onClick={() => void useLibraryStore.getState().toggleLike(track)} />

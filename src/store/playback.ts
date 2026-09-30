@@ -30,6 +30,8 @@ interface PlaybackState {
   /** Track ids played under shuffle (session-only) so Previous walks what you actually heard. */
   shuffleHistory: string[];
   buffered: number;
+  nextReady: boolean;
+  setNextReady: (ready: boolean) => void;
   fullPlayerOpen: boolean;
   activeSheet: PlayerSheet;
   sourceRevision: number;
@@ -65,10 +67,9 @@ interface PlaybackState {
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 let saveTimer: number | undefined;
-// streamUrl is a signed URL that dies within hours and fileId only exists on
-// this device's IndexedDB — persisting either produces unrestorable queues.
+// Signed remote URLs expire; local file ids must survive a device restart.
 function storable(track: MediaTrack): MediaTrack {
-  const { streamUrl: _streamUrl, fileId: _fileId, ...safe } = track;
+  const { streamUrl: _streamUrl, ...safe } = track;
   return safe;
 }
 function persist(state: Pick<PlaybackState, 'queue' | 'currentIndex' | 'volume' | 'shuffle' | 'repeat'>): void {
@@ -76,6 +77,7 @@ function persist(state: Pick<PlaybackState, 'queue' | 'currentIndex' | 'volume' 
   saveTimer = window.setTimeout(() => {
     void Promise.all([
       setSetting('queue', { tracks: state.queue.map(storable), index: state.currentIndex, position: usePlaybackStore.getState().position }),
+      setSetting('queue.position', { trackId: usePlaybackStore.getState().currentTrack?.id, position: usePlaybackStore.getState().position }),
       setSetting('volume', state.volume),
       setSetting('shuffle', state.shuffle),
       setSetting('repeat', state.repeat),
@@ -83,10 +85,13 @@ function persist(state: Pick<PlaybackState, 'queue' | 'currentIndex' | 'volume' 
   }, 150);
 }
 let positionSaveTimer: number | undefined;
-function persistPosition(position: number): void {
-  window.clearTimeout(positionSaveTimer);
+function persistPosition(_position: number): void {
+  // Throttle rather than debounce: continuous timeupdate events must still save.
+  if (positionSaveTimer !== undefined) return;
   positionSaveTimer = window.setTimeout(() => {
-    void setSetting('queue.position', position);
+    positionSaveTimer = undefined;
+    const { currentTrack, position } = usePlaybackStore.getState();
+    void setSetting('queue.position', { trackId: currentTrack?.id, position });
   }, 4_000);
 }
 
@@ -113,6 +118,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   repeat: 'off',
   shuffleHistory: [],
   buffered: 0,
+  nextReady: false,
+  setNextReady: (nextReady) => { if (get().nextReady !== nextReady) set({ nextReady }); },
   fullPlayerOpen: false,
   activeSheet: null,
   sourceRevision: 0,
@@ -120,7 +127,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   bootstrap: async () => {
     const [savedQueue, savedPosition, volume, shuffle, repeat, playbackRate] = await Promise.all([
       getSetting<PersistedQueue>('queue', { tracks: [], index: -1 }),
-      getSetting<number>('queue.position', 0),
+      getSetting<number | { trackId?: string; position: number }>('queue.position', 0),
       getSetting<number>('volume', 0.82),
       getSetting<boolean>('shuffle', false),
       getSetting<RepeatMode>('repeat', 'off'),
@@ -130,7 +137,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     // Resume mid-track: the engine seeks once metadata loads (see its
     // loadedmetadata handler), so restoring the position here is enough.
     const duration = current.currentTrack?.durationSeconds ?? 0;
-    const saved = Number.isFinite(savedPosition) && savedPosition > 0 ? savedPosition : savedQueue.position ?? 0;
+    const matchingPosition = typeof savedPosition === 'object' && savedPosition?.trackId === current.currentTrack?.id ? savedPosition.position : undefined;
+    const saved = Number.isFinite(matchingPosition) ? matchingPosition! : savedQueue.position ?? 0;
     const position = current.currentTrack ? (duration ? clamp(saved, 0, duration) : saved) : 0;
     set({ ...current, ready: true, volume: clamp(volume, 0, 1), shuffle, repeat: ['off', 'all', 'one'].includes(repeat) ? repeat : 'off', playbackRate: Number.isFinite(playbackRate) ? clamp(playbackRate, .5, 2) : 1, position, duration });
   },
@@ -287,7 +295,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     if (index < currentIndex) currentIndex -= 1;
     else if (index === currentIndex) { currentIndex = Math.min(currentIndex, queue.length - 1); revision += 1; }
     const current = updateCurrent(queue, currentIndex);
-    set({ ...current, autoplayEligible: false, sourceRevision: revision, isPlaying: queue.length ? state.isPlaying : false, status: queue.length ? state.status : 'idle' });
+    set({ ...current, autoplayEligible: false, sourceRevision: revision, isPlaying: queue.length ? state.isPlaying : false, status: queue.length ? (index === state.currentIndex ? 'loading' : state.status) : 'idle', ...(index === state.currentIndex ? { position: 0, buffered: 0, duration: current.currentTrack?.durationSeconds ?? 0, error: undefined } : {}) });
     persist({ ...state, ...current });
   },
 

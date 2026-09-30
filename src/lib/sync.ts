@@ -13,6 +13,7 @@ interface SyncSnapshot {
   playlists: Array<{ id: string; name: string; description?: string; artwork?: string; createdAt: number; updatedAt: number; trackIds: string[] }>;
   history: Array<Omit<HistoryRecord, 'id'>>;
   settings: { appearance?: Record<string, unknown>; playback?: Record<string, unknown> };
+  settingsUpdatedAt?: { appearance?: number; playback?: number };
   tombstones?: Tombstone[];
 }
 interface SyncAccount { username: string }
@@ -70,6 +71,7 @@ async function localSnapshot(): Promise<SyncSnapshot> {
     playlists: playlists.slice(0, 100).map(({ id, name, description, artwork, createdAt, updatedAt }) => ({ id, name, description, artwork, createdAt, updatedAt, trackIds: (byPlaylist.get(id) ?? []).sort((a,b)=>a.position-b.position).map((join)=>join.trackId).slice(0,500) })),
     history: history.map(({ id: _id, ...item }) => item),
     settings: { appearance: (appearance?.value as Record<string, unknown> | undefined), playback: (playback?.value as Record<string, unknown> | undefined) },
+    settingsUpdatedAt: { appearance: appearance?.updatedAt ?? 0, playback: playback?.updatedAt ?? 0 },
     tombstones: tombstones.filter((item) => Date.now() - item.deletedAt < TOMBSTONE_TTL_MS),
   };
 }
@@ -99,7 +101,16 @@ async function writeMergedSnapshot(cloud: SyncSnapshot): Promise<void> {
     const playlist = playlists.get(id);
     if (playlist && deletedAt > playlist.updatedAt) playlists.delete(id);
   }
-  const merged: SyncSnapshot = { tracks: [...tracks.values()].slice(-500).map(remoteTrack), playlists: [...playlists.values()].slice(0,100), history: [...historyMap.values()].sort((a,b)=>b.playedAt-a.playedAt).slice(0,500), settings: { appearance: cloud.settings?.appearance ?? local.settings.appearance, playback: cloud.settings?.playback ?? local.settings.playback }, tombstones: [...tombstones.entries()].map(([id, deletedAt]) => ({ id, deletedAt })) };
+  const settings: SyncSnapshot['settings'] = {};
+  const settingsUpdatedAt: NonNullable<SyncSnapshot['settingsUpdatedAt']> = {};
+  for (const key of ['appearance', 'playback'] as const) {
+    const cloudTime = cloud.settingsUpdatedAt?.[key] ?? 0;
+    const localTime = local.settingsUpdatedAt?.[key] ?? 0;
+    const useCloud = cloud.settings?.[key] !== undefined && (!local.settings[key] || cloudTime > localTime);
+    settings[key] = useCloud ? cloud.settings[key] : local.settings[key];
+    settingsUpdatedAt[key] = useCloud ? cloudTime : localTime;
+  }
+  const merged: SyncSnapshot = { tracks: [...tracks.values()].slice(-500).map(remoteTrack), playlists: [...playlists.values()].slice(0,100), history: [...historyMap.values()].sort((a,b)=>b.playedAt-a.playedAt).slice(0,500), settings, settingsUpdatedAt, tombstones: [...tombstones.entries()].map(([id, deletedAt]) => ({ id, deletedAt })) };
   const remoteIds = new Set(merged.tracks.map((track) => track.id));
   const survivingIds = new Set(merged.playlists.map((playlist) => playlist.id));
   const oldHist = await db.history.toArray();
@@ -117,14 +128,23 @@ async function writeMergedSnapshot(cloud: SyncSnapshot): Promise<void> {
     for (const playlist of merged.playlists) {
       const current = await db.playlists.get(playlist.id);
       await db.playlists.put({ id: playlist.id, name: playlist.name, description: playlist.description, artwork: playlist.artwork, createdAt: current?.createdAt ?? playlist.createdAt, updatedAt: Math.max(current?.updatedAt ?? 0, playlist.updatedAt) });
-      for (const trackId of playlist.trackIds.filter((id) => remoteIds.has(id))) {
-        if (!await db.playlistTracks.where('[playlistId+trackId]').equals([playlist.id, trackId]).first()) await db.playlistTracks.add({ playlistId: playlist.id, trackId, position: await db.playlistTracks.where('playlistId').equals(playlist.id).count(), addedAt: Date.now() });
+      // The winning snapshot owns remote membership and order. Preserve
+      // local-only files, which cannot travel between devices.
+      const joins = await db.playlistTracks.where('playlistId').equals(playlist.id).sortBy('position');
+      const localJoins = [];
+      for (const join of joins) {
+        if ((await db.tracks.get(join.trackId))?.source === 'local') localJoins.push(join);
       }
+      await db.playlistTracks.where('playlistId').equals(playlist.id).delete();
+      const trackIds = [...new Set(playlist.trackIds.filter((id) => remoteIds.has(id)))];
+      const rebuilt = trackIds.map((trackId, position) => ({ playlistId: playlist.id, trackId, position, addedAt: Date.now() }));
+      rebuilt.push(...localJoins.map((join, index) => ({ playlistId: playlist.id, trackId: join.trackId, position: trackIds.length + index, addedAt: join.addedAt })));
+      if (rebuilt.length) await db.playlistTracks.bulkAdd(rebuilt);
     }
     const existing = new Set(oldHist.map((item)=>`${item.trackId}:${item.playedAt}`));
     const history = merged.history.filter((item)=>!existing.has(`${item.trackId}:${item.playedAt}`));
     if (history.length) await db.history.bulkAdd(history);
-    for (const key of ['appearance','playback'] as const) if (merged.settings[key]) await db.settings.put({ key, value: merged.settings[key], updatedAt: Date.now() });
+    for (const key of ['appearance','playback'] as const) if (merged.settings[key]) await db.settings.put({ key, value: merged.settings[key], updatedAt: merged.settingsUpdatedAt?.[key] ?? 0 });
     await db.settings.put({ key: TOMBSTONE_KEY, value: (merged.tombstones ?? []).filter((item) => Date.now() - item.deletedAt < TOMBSTONE_TTL_MS), updatedAt: Date.now() });
   });
   await useLibraryStore.getState().bootstrap();
@@ -148,7 +168,7 @@ export function enableAutomaticSync(): void {
     if (syncInProgress || Date.now() < suppressPushUntil || !state.ready) return;
     if (state.likedTracks === previous.likedTracks && state.recent === previous.recent && state.playlists === previous.playlists && state.appearance === previous.appearance && state.playbackSettings === previous.playbackSettings) return;
     window.clearTimeout(debounceTimer);
-    debounceTimer = window.setTimeout(() => { void localSnapshot().then((snapshot)=>request('/data',{method:'PUT',body:JSON.stringify(snapshot)})).catch((error)=>console.warn('Aurora account sync paused:',error)); }, 1800);
+    debounceTimer = window.setTimeout(() => { void syncLibrary().catch((error)=>console.warn('Aurora account sync paused:',error)); }, 1800);
   });
   // Pushing alone leaves long-lived tabs behind other devices. Pull on focus /
   // reconnect / every 5 minutes so changes made elsewhere actually arrive.
