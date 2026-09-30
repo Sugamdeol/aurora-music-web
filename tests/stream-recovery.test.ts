@@ -12,6 +12,23 @@ beforeEach(() => vi.clearAllMocks());
 afterEach(() => vi.unstubAllGlobals());
 
 describe('song extraction', () => {
+  it('treats a prepared audio request as interruptible background work', async () => {
+    let backgroundSignal: AbortSignal | undefined;
+    execFile.mockImplementation((_command, args, options, callback) => {
+      if (args.some((arg: string) => arg.includes('watch?v=prepared'))) {
+        backgroundSignal = options.signal;
+        options.signal.addEventListener('abort', () => callback(new Error('cancelled'), '', ''), { once: true });
+      } else callback(null, JSON.stringify({ url: 'https://r1.googlevideo.com/audio', ext: 'm4a' }), '');
+    });
+    const extractor = new YtDlpService();
+    const prepared = extractor.getAudioFormat('prepared', false, 'auto', 'background');
+    const interrupted = expect(prepared).rejects.toThrow('interrupted');
+    await expect(extractor.getAudioFormat('selected')).resolves.toMatchObject({ mimeType: 'audio/mp4' });
+    await interrupted;
+    expect(backgroundSignal?.aborted).toBe(true);
+    expect(execFile).toHaveBeenCalledTimes(2);
+  });
+
   it('selects distinct audio quality formats and reuses each signed URL independently', async () => {
     execFile.mockImplementation((_command, _args, _options, callback) => {
       callback(null, JSON.stringify({ url: 'https://r1.googlevideo.com/audio', ext: 'm4a' }), '');
