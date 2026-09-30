@@ -116,11 +116,18 @@ export function normalizeItem(itemValue: unknown, fallbackKind = 'song'): MusicI
 
 export function normalizeHeader(headerValue: unknown): MusicHeader {
   const header = record(headerValue);
+  const artists = array(header.artists ?? header.authors).map(normalizeArtist).filter((artist) => artist.name);
+  const author = asText(valueAt(header.author, 'name'));
   return {
     title: asText(header.title ?? header.name) || 'Aurora Music',
     subtitle: asText(header.subtitle ?? header.second_subtitle),
     description: asText(header.description),
     thumbnail: bestThumbnail(header),
+    artist: artists.map(({ name }) => name).join(', ') || asText(header.artist) || author,
+    artistId: artists[0]?.id || asText(header.artist_id),
+    artists,
+    year: asText(header.year),
+    count: asText(header.song_count ?? header.item_count ?? header.count),
   };
 }
 

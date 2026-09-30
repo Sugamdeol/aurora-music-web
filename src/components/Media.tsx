@@ -14,9 +14,10 @@ interface SongRowProps {
   contextLabel?: string;
   index?: number;
   playlistId?: string;
+  showPosition?: boolean;
 }
 
-export function SongRow({ track, context = [track], contextLabel = 'Queue', index = 0, playlistId }: SongRowProps) {
+export function SongRow({ track, context = [track], contextLabel = 'Queue', index = 0, playlistId, showPosition = false }: SongRowProps) {
   const current = usePlaybackStore((state) => state.currentTrack);
   const isPlaying = usePlaybackStore((state) => state.isPlaying);
   const playTrack = usePlaybackStore((state) => state.playTrack);
@@ -45,17 +46,22 @@ export function SongRow({ track, context = [track], contextLabel = 'Queue', inde
     else playTrack(track, context, contextLabel, index);
   };
 
-  return <article className={`song-row ${active ? 'is-current' : ''}`} style={{ '--row-index': index } as React.CSSProperties}>
+  return <article className={`song-row ${active ? 'is-current' : ''} ${showPosition ? 'has-position' : ''}`} style={{ '--row-index': index } as React.CSSProperties}>
+    {showPosition && <span className="song-row-position" aria-label={`Track ${index + 1}`}>{index + 1}</span>}
     <button className="song-row-art" onClick={play} aria-label={`${active && isPlaying ? 'Pause' : 'Play'} ${track.title}`}>
       <Artwork src={track.artwork} title={track.title} />
       {active && isPlaying
         ? <span className="song-row-play now-bars" aria-hidden="true"><i /><i /><i /></span>
         : <span className="song-row-play"><Icon name={active ? 'pause' : 'play'} size={16} /></span>}
     </button>
-    <button className="song-row-copy" onClick={play}>
-      <strong>{track.title}</strong>
-      <span>{track.artist}{track.album ? ` · ${track.album}` : ''}{track.kind === 'local' ? ' · Local file' : ''}</span>
-    </button>
+    <div className="song-row-copy">
+      <button className="song-row-title" onClick={play}><strong>{track.title}</strong></button>
+      <span>
+        {(track.artists?.length ? track.artists : [{ id: track.artistId, name: track.artist }]).map((artist, artistIndex) => <span key={`${artist.id ?? artist.name}-${artistIndex}`} className="song-row-credit">{artistIndex > 0 && ', '}{artist.id ? <Link to={`/artist/${encodeURIComponent(artist.id)}`}>{artist.name}</Link> : artist.name}</span>)}
+        {track.album && <> · {track.albumId ? <Link to={`/album/${encodeURIComponent(track.albumId)}`}>{track.album}</Link> : track.album}</>}
+        {track.kind === 'local' ? ' · Local file' : ''}
+      </span>
+    </div>
     <span className="song-row-duration">{track.durationLabel || formatDuration(track.durationSeconds)}</span>
     <IconButton icon="heart" label={liked ? 'Remove from liked songs' : 'Add to liked songs'} active={liked} className="song-like" onClick={() => void toggleLike(track)} />
     <div className="row-menu-wrap" ref={menuRef}>

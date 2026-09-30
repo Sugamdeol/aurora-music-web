@@ -27,6 +27,11 @@ export interface MusicHeader {
   subtitle: string;
   description: string;
   thumbnail: string;
+  artist: string;
+  artistId: string;
+  artists: ArtistReference[];
+  year: string;
+  count: string;
 }
 
 export interface MusicSection {

@@ -61,6 +61,10 @@ export interface EntityDetail {
   title: string;
   subtitle?: string;
   description?: string;
+  artist?: string;
+  artistId?: string;
+  year?: string;
+  count?: string | number;
   artwork?: string;
   sections: MediaSection[];
   tracks: MediaTrack[];

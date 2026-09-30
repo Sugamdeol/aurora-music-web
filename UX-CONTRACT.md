@@ -11,6 +11,16 @@ The existing stores and routes own playback, playlists, and saved music. UI chan
 | Extend playlist | Preserve target and selection | Show count added and a link to the playlist | Keep preview for retry; do not add duplicates |
 | Ask Aurora | Keep the question in the conversation and announce progress | Show answer with source links or playable track actions | Keep conversation, show inline error and allow a new request |
 
+## Collection pages
+
+| Page | Primary content | Library action | Playback |
+| --- | --- | --- | --- |
+| Album | Release artist, year, track order, and full run time | Save or remove the album from the Albums library | Play and shuffle only the album tracks, in album order by default |
+| Artist | Up to ten popular songs, followed by separate album and release shelves | Follow or unfollow the artist in the Artists library | Play or shuffle the popular songs as one queue |
+| Playlist | Owner/description, song count, run time, and ordered tracks | Local playlists can be edited; remote playlists can be saved as a local copy | Keep the playlist as the queue context; local track menus can remove songs |
+
+Track credits link to their artist and album pages without changing the play control. Album, artist, and playlist shelves remain separate from their main track list so tracks never appear twice.
+
 ## Spatial audio
 
 | Action | Pending | Success | Failure |
