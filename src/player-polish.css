@@ -230,3 +230,17 @@ a.explore-jump-chip, a.explore-category-chip { text-decoration: none; display: i
   background-image: var(--track-tint);
   filter: blur(40px) saturate(1.3) brightness(.5);
 }
+
+/* Playback, loaded audio, then unloaded audio share the original seek bar. */
+.seek-track { --buffer-color: color-mix(in srgb, var(--ink) 38%, transparent); --unloaded-color: color-mix(in srgb, var(--ink) 12%, transparent); }
+.seek-track .buffer-spine { display: none; }
+.progress-wrap .seek-track input[type="range"] { background: transparent; }
+.seek-track input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--progress, 0%), var(--buffer-color) var(--progress, 0%), var(--buffer-color) max(var(--progress, 0%), var(--buffered, 0%)), var(--unloaded-color) max(var(--progress, 0%), var(--buffered, 0%)), var(--unloaded-color) 100%); }
+.seek-track input[type="range"]::-moz-range-track { height: 4px; border-radius: 999px; background: linear-gradient(to right, var(--buffer-color) var(--buffered, 0%), var(--unloaded-color) var(--buffered, 0%)); }
+.seek-track input[type="range"]::-moz-range-progress { background: var(--accent); height: 4px; }
+.timeline-detail { width: 100%; }
+.buffer-status { min-height: 18px; display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.buffer-status button { color: var(--ink); background: transparent; border: 0; text-decoration: underline; min-height: 24px; cursor: pointer; }
+.dock-transport .buffer-status { justify-content: center; font-size: 9px; }
+
+@media (max-width: 760px) { .dock-transport .buffer-status { grid-column: 1 / -1; grid-row: 3; min-height: 12px; line-height: 12px; } }
