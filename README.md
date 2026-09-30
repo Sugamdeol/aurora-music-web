@@ -1,6 +1,6 @@
 # Aurora Music Web
 
-Aurora Music's responsive web client and streaming API, with song search, YouTube Music playback, synced and romanized lyrics, radio, queue, playlists, listening history, equalizer, and Liquid Glass styling.
+Aurora Music's responsive web client and streaming API, with song search, YouTube Music playback, synced and romanized lyrics, radio, queue, playlists, listening history, equalizer, an 8D spatial audio studio, and Liquid Glass styling.
 
 ## Run locally
 

@@ -7,6 +7,7 @@ import { usePlaybackStore } from '../store/playback';
 import { EqualizerGraph } from './equalizer';
 import { useRoomStore } from '../room/client';
 import { mixGains, transitionDuration } from './songTransitions';
+import { DEFAULT_SPATIAL_AUDIO, normalizeSpatialAudioSettings, readSpatialAudioSettings, spatialMotionAtPhase, stereoWidthCoefficients, type SpatialAudioSettings } from './spatialAudio';
 
 type StoreState = ReturnType<typeof usePlaybackStore.getState>;
 interface PreparedDeck { audio: HTMLAudioElement; track: MediaTrack; index: number; candidates: string[]; sourceIndex: number; objectUrl?: string }
@@ -33,6 +34,21 @@ export class PlaybackEngine {
   private fadeTimer?: number;
   private compressor?: DynamicsCompressorNode;
   private equalizer?: EqualizerGraph;
+  private widthSplitter?: ChannelSplitterNode;
+  private widthMerger?: ChannelMergerNode;
+  private widthLeftDirect?: GainNode;
+  private widthLeftCross?: GainNode;
+  private widthRightDirect?: GainNode;
+  private widthRightCross?: GainNode;
+  private spatialPanner?: StereoPannerNode;
+  private spatialConvolver?: ConvolverNode;
+  private spatialDry?: GainNode;
+  private spatialWet?: GainNode;
+  private spatialOutput?: GainNode;
+  private spatialSettings: SpatialAudioSettings = DEFAULT_SPATIAL_AUDIO;
+  private spatialFrame?: number;
+  private finalOutputNode?: AudioNode;
+  private recordingDestination?: MediaStreamAudioDestinationNode;
   private graphMode = '';
   private sourceCandidates: string[] = [];
   private sourceIndex = 0;
@@ -50,6 +66,7 @@ export class PlaybackEngine {
   constructor() {
     this.audio.preload = 'metadata';
     this.audio.crossOrigin = 'anonymous';
+    this.spatialSettings = readSpatialAudioSettings();
   }
 
   start(): () => void {
@@ -139,6 +156,7 @@ export class PlaybackEngine {
 
   private async applyState(state: StoreState, previous: StoreState): Promise<void> {
     if (this.destroyed) return;
+    this.syncSpatialMotion(state);
     // Buffer/readiness indicators are UI-only; avoid re-entering track loads.
     if ((state.nextReady !== previous.nextReady || state.buffered !== previous.buffered)
       && state.currentTrack === previous.currentTrack && state.queue === previous.queue
@@ -571,18 +589,139 @@ export class PlaybackEngine {
       const settings = useLibraryStore.getState().playbackSettings;
       this.equalizer ??= new EqualizerGraph(this.audioContext);
       this.equalizer.update(settings.equalizerGains);
+      this.ensureSpatialNodes();
       const mode = `${enabled}:${settings.equalizerEnabled}`;
       if (this.graphMode === mode) return;
       this.sourceNode.disconnect();
       this.compressor.disconnect();
+      this.spatialOutput?.disconnect();
       let output: AudioNode = settings.equalizerEnabled ? this.equalizer.connect(this.sourceNode) : this.sourceNode;
+      output.connect(this.widthSplitter!);
+      output = this.spatialOutput!;
       if (enabled) { output.connect(this.compressor); output = this.compressor; }
       output.connect(this.audioContext.destination);
+      if (this.recordingDestination) output.connect(this.recordingDestination);
+      this.finalOutputNode = output;
       this.graphMode = mode;
     } catch {
       try { this.sourceNode?.disconnect(); this.sourceNode?.connect(this.audioContext!.destination); this.graphMode = ''; } catch { /* Keep the original media element available. */ }
       // Some browsers disallow media-element graph creation; native playback remains available.
     }
+  }
+
+  private ensureSpatialNodes(): void {
+    const context = this.audioContext;
+    if (!context) return;
+    if (!this.widthSplitter) {
+      this.widthSplitter = context.createChannelSplitter(2);
+      this.widthMerger = context.createChannelMerger(2);
+      this.widthLeftDirect = context.createGain();
+      this.widthLeftCross = context.createGain();
+      this.widthRightDirect = context.createGain();
+      this.widthRightCross = context.createGain();
+      this.widthSplitter.connect(this.widthLeftDirect, 0);
+      this.widthLeftDirect.connect(this.widthMerger, 0, 0);
+      this.widthSplitter.connect(this.widthLeftCross, 1);
+      this.widthLeftCross.connect(this.widthMerger, 0, 0);
+      this.widthSplitter.connect(this.widthRightCross, 0);
+      this.widthRightCross.connect(this.widthMerger, 0, 1);
+      this.widthSplitter.connect(this.widthRightDirect, 1);
+      this.widthRightDirect.connect(this.widthMerger, 0, 1);
+      this.spatialPanner = context.createStereoPanner();
+      this.spatialConvolver = context.createConvolver();
+      this.spatialConvolver.buffer = this.createRoomImpulse(context, 1.65, 3.2);
+      this.spatialDry = context.createGain();
+      this.spatialWet = context.createGain();
+      this.spatialOutput = context.createGain();
+      this.widthMerger.connect(this.spatialPanner);
+      this.spatialPanner.connect(this.spatialDry);
+      this.spatialDry.connect(this.spatialOutput);
+      this.spatialPanner.connect(this.spatialConvolver);
+      this.spatialConvolver.connect(this.spatialWet);
+      this.spatialWet.connect(this.spatialOutput);
+    }
+    this.applySpatialSettings();
+  }
+
+  private createRoomImpulse(context: AudioContext, seconds: number, decay: number): AudioBuffer {
+    const length = Math.floor(context.sampleRate * seconds);
+    const impulse = context.createBuffer(2, length, context.sampleRate);
+    for (let channel = 0; channel < impulse.numberOfChannels; channel += 1) {
+      const data = impulse.getChannelData(channel);
+      const offset = channel ? 0.17 : 0;
+      for (let index = 0; index < length; index += 1) {
+        const age = Math.max(0, index / length - offset);
+        data[index] = (Math.random() * 2 - 1) * Math.pow(1 - age, decay);
+      }
+    }
+    return impulse;
+  }
+
+  private applySpatialSettings(): void {
+    const enabled = this.spatialSettings.enabled;
+    const [direct, cross] = stereoWidthCoefficients(this.spatialSettings.width, enabled);
+    if (this.widthLeftDirect) this.widthLeftDirect.gain.value = direct;
+    if (this.widthRightDirect) this.widthRightDirect.gain.value = direct;
+    if (this.widthLeftCross) this.widthLeftCross.gain.value = cross;
+    if (this.widthRightCross) this.widthRightCross.gain.value = cross;
+    if (this.spatialDry) this.spatialDry.gain.value = enabled ? .92 : 1;
+    if (this.spatialWet) this.spatialWet.gain.value = enabled ? (this.spatialSettings.reverb / 100) * .72 : 0;
+    if (this.spatialPanner) this.spatialPanner.pan.value = enabled ? this.spatialSettings.pan / 100 : 0;
+  }
+
+  setSpatialAudioSettings(settings: SpatialAudioSettings): void {
+    this.cancelSpatialMotion();
+    this.spatialSettings = normalizeSpatialAudioSettings(settings);
+    this.applySpatialSettings();
+    this.syncSpatialMotion();
+  }
+
+  private cancelSpatialMotion(): void {
+    if (this.spatialFrame !== undefined && typeof window !== 'undefined') window.cancelAnimationFrame(this.spatialFrame);
+    this.spatialFrame = undefined;
+  }
+
+  private syncSpatialMotion(state: StoreState = usePlaybackStore.getState()): void {
+    const moving = this.spatialSettings.enabled && this.spatialSettings.motion !== 'manual' && state.isPlaying;
+    if (!moving || !this.spatialPanner || typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+      this.cancelSpatialMotion();
+      if (this.spatialPanner) this.spatialPanner.pan.value = moving ? 0 : this.spatialSettings.enabled && this.spatialSettings.motion === 'manual' ? this.spatialSettings.pan / 100 : 0;
+      return;
+    }
+    if (this.spatialFrame !== undefined) return;
+    const startedAt = performance.now();
+    const animate = (now: number) => {
+      const current = usePlaybackStore.getState();
+      if (!this.spatialSettings.enabled || this.spatialSettings.motion === 'manual' || !current.isPlaying || !this.spatialPanner) {
+        this.spatialFrame = undefined;
+        if (this.spatialPanner) this.spatialPanner.pan.value = this.spatialSettings.enabled && this.spatialSettings.motion === 'manual' ? this.spatialSettings.pan / 100 : 0;
+        return;
+      }
+      const phase = ((now - startedAt) / 1000) * this.spatialSettings.speed * Math.PI * 2;
+      this.spatialPanner.pan.value = spatialMotionAtPhase(this.spatialSettings, phase).pan;
+      this.spatialFrame = window.requestAnimationFrame(animate);
+    };
+    this.spatialFrame = window.requestAnimationFrame(animate);
+  }
+
+  createProcessedMediaStream(): MediaStream | null {
+    if (!this.audioContext || !this.finalOutputNode || !('MediaStreamAudioDestinationNode' in window)) return null;
+    try {
+      this.recordingDestination = this.audioContext.createMediaStreamDestination();
+      this.finalOutputNode.connect(this.recordingDestination);
+      return this.recordingDestination.stream;
+    } catch {
+      this.recordingDestination = undefined;
+      return null;
+    }
+  }
+
+  releaseProcessedMediaStream(): void {
+    const destination = this.recordingDestination;
+    if (!destination) return;
+    try { this.finalOutputNode?.disconnect(destination); } catch { /* The graph may have changed while recording. */ }
+    destination.stream.getTracks().forEach((track) => track.stop());
+    this.recordingDestination = undefined;
   }
 
   private configureMediaSession(): void {
@@ -619,6 +758,7 @@ export class PlaybackEngine {
   }
 
   stop(): void {
+    this.cancelSpatialMotion();
     this.cancelFade();
     this.clearPrepared();
     this.roomUnsubscribe?.();

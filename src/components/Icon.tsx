@@ -2,15 +2,16 @@ import type { SVGProps } from 'react';
 
 export type IconName =
   | 'home' | 'search' | 'library' | 'users' | 'settings' | 'chart' | 'heart' | 'plus'
-  | 'play' | 'pause' | 'next' | 'previous' | 'shuffle' | 'repeat' | 'repeat-one'
+  | 'play' | 'pause' | 'stop' | 'next' | 'previous' | 'shuffle' | 'repeat' | 'repeat-one'
   | 'queue' | 'lyrics' | 'volume' | 'mute' | 'chevron-down' | 'chevron-right'
   | 'arrow-left' | 'more' | 'music' | 'disc' | 'clock' | 'folder' | 'upload'
-  | 'trash' | 'download' | 'check' | 'x' | 'sparkles' | 'wifi' | 'copy' | 'drag' | 'sun' | 'moon' | 'sliders' | 'share' | 'radio';
+  | 'trash' | 'download' | 'check' | 'x' | 'sparkles' | 'wifi' | 'copy' | 'drag' | 'sun' | 'moon' | 'sliders' | 'share' | 'radio' | 'spatial';
 
 const paths: Record<IconName, React.ReactNode> = {
   sliders: <><path d="M5 3v9m0 4v5M12 3v3m0 4v11M19 3v12m0 4v2M2 12h6m1-6h6m1 9h6" /></>,
   share: <><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 10.5 6.8-4m-6.8 7 6.8 4" /></>,
   radio: <><rect x="3" y="8" width="18" height="13" rx="3" /><path d="m5 8 13-5M6 12h6m-6 4h3" /><circle cx="16" cy="15" r="2" /></>,
+  spatial: <><ellipse cx="12" cy="12" rx="9" ry="4.5" transform="rotate(-28 12 12)" /><ellipse cx="12" cy="12" rx="9" ry="4.5" transform="rotate(32 12 12)" /><circle cx="12" cy="12" r="1.5" fill="currentColor" /></>,
   sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></>,
   moon: <path d="M21 13a9 9 0 0 1-10-10 9 9 0 1 0 10 10Z" />,
   home: <><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-6v-7h-4v7H4a1 1 0 0 1-1-1z" /></>,
@@ -23,6 +24,7 @@ const paths: Record<IconName, React.ReactNode> = {
   plus: <><path d="M12 5v14M5 12h14" /></>,
   play: <path d="m8 5 12 7-12 7z" fill="currentColor" stroke="none" />,
   pause: <><path d="M8 5h3v14H8zM15 5h3v14h-3z" fill="currentColor" stroke="none" /></>,
+  stop: <rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" stroke="none" />,
   next: <><path d="m5 4 10 8-10 8z" /><path d="M19 5v14" /></>,
   previous: <><path d="M19 20 9 12l10-8z" /><path d="M5 19V5" /></>,
   shuffle: <><path d="m18 14 4 4-4 4m0-20 4 4-4 4M2 18h2.5a6 6 0 0 0 4.2-1.7l6.6-6.6A6 6 0 0 1 19.5 8H22M2 6h2.5a6 6 0 0 1 4.2 1.7M14 14l1.5 1.5A6 6 0 0 0 19.5 18H22" /></>,

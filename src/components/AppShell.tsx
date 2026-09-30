@@ -29,12 +29,13 @@ function ShortcutsSheet({ onClose }: { onClose: () => void }) {
   </div>;
 }
 
-const primaryNav: Array<{ to: string; label: string; icon: IconName; end?: boolean }> = [
+const primaryNav: Array<{ to: string; label: string; mobileLabel?: string; icon: IconName; end?: boolean }> = [
   { to: '/', label: 'Home', icon: 'home', end: true },
   { to: '/search', label: 'Search', icon: 'search' },
   { to: '/explore', label: 'Explore', icon: 'sparkles' },
-  { to: '/ai', label: 'Studio', icon: 'sparkles' },
-  { to: '/room', label: 'Together', icon: 'users' },
+  { to: '/ai', label: 'AI Studio', mobileLabel: 'AI', icon: 'sparkles' },
+  { to: '/audio-studio', label: 'Audio Studio', mobileLabel: 'Audio', icon: 'spatial' },
+  { to: '/room', label: 'Together', mobileLabel: 'Room', icon: 'users' },
   { to: '/library', label: 'Library', icon: 'library' },
 ];
 
@@ -44,8 +45,8 @@ const secondaryNav: Array<{ to: string; label: string; icon: IconName }> = [
   { to: '/settings', label: 'Settings', icon: 'settings' },
 ];
 
-function NavItem({ to, label, icon, end }: { to: string; label: string; icon: IconName; end?: boolean }) {
-  return <NavLink to={to} end={end} className={({ isActive }) => `nav-link ${isActive ? 'is-active' : ''}`}><Icon name={icon} /><span>{label}</span></NavLink>;
+function NavItem({ to, label, mobileLabel, icon, end }: { to: string; label: string; mobileLabel?: string; icon: IconName; end?: boolean }) {
+  return <NavLink to={to} end={end} className={({ isActive }) => `nav-link ${isActive ? 'is-active' : ''}`}><Icon name={icon} /><span className="nav-desktop-label">{label}</span><span className="nav-mobile-label">{mobileLabel ?? label}</span></NavLink>;
 }
 
 export function AppShell() {

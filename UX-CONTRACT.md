@@ -11,9 +11,18 @@ The existing stores and routes own playback, playlists, and saved music. UI chan
 | Extend playlist | Preserve target and selection | Show count added and a link to the playlist | Keep preview for retry; do not add duplicates |
 | Ask Aurora | Keep the question in the conversation and announce progress | Show answer with source links or playable track actions | Keep conversation, show inline error and allow a new request |
 
+## Spatial audio
+
+| Action | Pending | Success | Failure |
+| --- | --- | --- | --- |
+| Enable 8D audio | Keep the chosen motion and mix controls available | Apply live panning, stereo width, and room reverb through the shared player | Keep standard playback available and explain when audio capture is unsupported |
+| Add a local audio file | Keep the player responsive during import | Store the file locally and start it in the shared player | Explain which audio formats are accepted |
+| Record processed audio | Require active playback and capture the live output | Download the processed recording | Explain when browser recording is unavailable or fails |
+| Save a sound recipe | Keep the entered name while editing | Store the recipe on this device and make it selectable | Keep the unsaved mix available |
+
 ## Navigation and controls
 
-- `src/components/AppShell.tsx` owns desktop and mobile navigation. The Studio route is `/ai`; local playlists live under `/playlist/local/:id`.
+- `src/components/AppShell.tsx` owns desktop and mobile navigation. AI Studio is `/ai`; Audio Studio is `/audio-studio`; local playlists live under `/playlist/local/:id`.
 - `src/styles.css` owns global scrollbar, focus, button and navigation treatments. `src/pages/AiPage.css` owns Studio-specific artwork and layout only.
 - Native `<select>` owns playlist choice, native `<textarea>` owns the mood prompt, and native checkboxes own preview selection. All retain labels and visible keyboard focus.
 - Route changes do not erase local saved playlists. The player and bottom navigation must not hide the Studio's main action on phone screens.

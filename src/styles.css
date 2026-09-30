@@ -82,6 +82,7 @@ button:disabled { opacity:.42; cursor:not-allowed; }
 .brand-lockup small { color:var(--accent); font-size:13px; }
 .desktop-nav { display:grid; gap:3px; }
 .nav-link { display:flex; min-height:46px; align-items:center; gap:13px; padding:0 12px; border-radius:14px; color:#aeb4aa; text-decoration:none; font-size:13px; transition:background .17s ease,color .17s ease,transform .17s ease; }
+.nav-mobile-label { display:none; }
 .nav-link svg { width:20px;height:20px; }
 .nav-link:hover { background:rgba(255,255,255,.04);color:var(--ink); }
 .nav-link:active { transform:scale(.98); }
@@ -661,10 +662,12 @@ button:disabled { opacity:.42; cursor:not-allowed; }
   .page-header h1 { font-size:32px;letter-spacing:-1.2px; }
   .page-header p { font-size:12px; }
   .page-header>.primary-button { min-width:44px;padding:0 13px; }
-  .bottom-nav { position:fixed;z-index:90;right:12px;bottom:calc(10px + env(safe-area-inset-bottom));left:12px;display:grid;height:68px;grid-template-columns:repeat(6,minmax(0,1fr));align-items:center;padding:5px 8px;border-radius:26px; }
-  .bottom-nav .nav-link { display:grid;min-height:56px;place-content:center;justify-items:center;gap:3px;padding:0;border-radius:18px;font-size:clamp(10px,2.8vw,12px); }
+  .bottom-nav { position:fixed;z-index:90;right:12px;bottom:calc(10px + env(safe-area-inset-bottom));left:12px;display:grid;height:68px;grid-template-columns:repeat(7,minmax(0,1fr));align-items:center;padding:5px 8px;border-radius:26px; }
+  .bottom-nav .nav-link { display:grid;min-height:56px;place-content:center;justify-items:center;gap:3px;padding:0;border-radius:18px;font-size:clamp(9px,2.35vw,11px); }
   .bottom-nav .nav-link svg { width:20px;height:20px; }
   .bottom-nav .nav-link.is-active { background:transparent;text-shadow:0 0 14px color-mix(in srgb,var(--accent) 50%,transparent); }
+  .bottom-nav .nav-desktop-label { display:none; }
+  .bottom-nav .nav-mobile-label { display:block; }
   .player-dock { right:12px;bottom:calc(87px + env(safe-area-inset-bottom));left:12px;grid-template-columns:minmax(0,1fr) auto;min-height:72px;gap:8px;padding:9px 11px;border:1px solid rgba(232,242,225,.16);border-radius:22px;background:linear-gradient(130deg,rgba(255,255,255,.09),rgba(255,255,255,.025) 48%),rgba(14,18,14,.87);box-shadow:0 12px 38px rgba(0,0,0,.46),inset 0 1px rgba(255,255,255,.1);backdrop-filter:blur(28px) saturate(1.5); }
   .dock-track>.artwork { width:49px;height:49px;border-radius:12px; }
   .dock-track strong { font-size:13px; }.dock-track small{font-size:12px}

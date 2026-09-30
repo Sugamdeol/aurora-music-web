@@ -32,13 +32,13 @@ components:
 
 ## Overview
 
-Aurora is a personal music player for phone and desktop. A listening room and the physical record sleeve guide the look: near-black surfaces, quiet borders, large album artwork, and one bright lime action at a time. The AI studio uses a vinyl record as its signature object. The rest of the app stays focused on tracks and playback.
+Aurora is a personal music player for phone and desktop. A listening room and the physical record sleeve guide the look: near-black surfaces, quiet borders, large album artwork, and one bright lime action at a time. The AI studio uses a vinyl record as its signature object. The Audio Studio uses a live listening field to show sound moving between the speakers, with its controls kept beside the field. The rest of the app stays focused on tracks and playback.
 
 The product is English-first and supports multilingual music names. On mobile, listeners should reach the primary action without losing it under the player or the bottom navigation. Avoid generic neon gradients, oversized explanatory paragraphs, and repeated rows of pills.
 
 ## Token ownership
 
-The existing `:root` variables in `src/styles.css` own the runtime colors, type families, and radii. This file records their intent and exact accepted values; do not duplicate them as a second CSS theme. The AI studio consumes those shared tokens in `src/pages/AiPage.css`. Its olive record artwork is a local illustration, not a new global color token.
+The existing `:root` variables in `src/styles.css` own the runtime colors, type families, and radii. This file records their intent and exact accepted values; do not duplicate them as a second CSS theme. The AI and audio studios consume those shared tokens in their page styles. The AI studio's olive record artwork and the audio studio's listening field are page-level illustrations, not new global color tokens.
 
 ## Layout and type
 
@@ -51,6 +51,8 @@ Primary actions use `--accent`, secondary actions use bordered dark surfaces, an
 ## Do and don't
 
 - Do place playable tracks, saved playlists, and search actions above decoration.
+- Do keep spatial motion, width, and room controls labelled by what a listener hears.
 - Do preserve the user's draft and current screen if an AI request fails.
 - Don't promise AI output when the app is showing catalog-only fallback results.
+- Don't animate the listening field when reduced motion is enabled.
 - Don't hide the main action below multiple stacks of filters or chips on a phone.
