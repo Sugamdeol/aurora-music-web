@@ -41,7 +41,7 @@ interface ExecResult {
 }
 
 export interface AudioExtractor {
-  getAudioFormat(id: string, refresh?: boolean, quality?: AudioQuality): Promise<AudioFormat>;
+  getAudioFormat(id: string, refresh?: boolean, quality?: AudioQuality, priority?: 'normal' | 'background'): Promise<AudioFormat>;
   warmAudioFormat?(id: string, quality?: AudioQuality): Promise<void>;
   readiness(force?: boolean): Promise<YtDlpStatus>;
   invalidate(id: string): void;
@@ -179,10 +179,17 @@ export class YtDlpService implements AudioExtractor {
     return operation;
   }
 
-  async getAudioFormat(id: string, refresh = false, quality: AudioQuality = 'auto'): Promise<AudioFormat> {
+  async getAudioFormat(id: string, refresh = false, quality: AudioQuality = 'auto', priority: 'normal' | 'background' = 'normal'): Promise<AudioFormat> {
     const key = `${id}:${quality}`;
     const cached = this.formats.get(key);
     if (!refresh && cached && cached.expiresAt > Date.now()) return cached.format;
+    if (priority === 'background') {
+      if (refresh) this.formats.delete(key);
+      await this.warmAudioFormat(id, quality);
+      const prepared = this.formats.get(key);
+      if (!prepared) throw new Error('Next-song preparation was interrupted by playback.');
+      return prepared.format;
+    }
     // Keep speculative work from delaying the song the listener just selected.
     for (const [warmKey, controller] of this.warmings) if (warmKey !== key) controller.abort();
     const existing = this.inFlight.get(key);
