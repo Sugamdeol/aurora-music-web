@@ -53,6 +53,14 @@ describe('library discovery', () => {
 });
 
 describe('player controls', () => {
+  it('shows actual buffered audio and next-song readiness without adding another slider', () => {
+    usePlaybackStore.getState().playTrack(tracks[0]);
+    usePlaybackStore.setState({ status: 'playing', duration: 240, buffered: 120, nextReady: true });
+    render(<MemoryRouter><PlayerDock /></MemoryRouter>);
+    expect(screen.getByText('50% buffered · Next song ready')).toBeInTheDocument();
+    expect(screen.getAllByRole('slider', { name: 'Track progress' })).toHaveLength(1);
+  });
+
   it.each(['play', 'togglePlayback'] as const)('reloads a failed source when %s is used', (action) => {
     usePlaybackStore.getState().playTrack(tracks[0]);
     usePlaybackStore.setState({ status: 'error', isPlaying: false, position: 42, error: 'Stream failed' });
