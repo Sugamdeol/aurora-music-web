@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { bestThumbnail, normalizeHeader, normalizeItem } from '../server/normalizers';
+import { normalizeMedia } from '../src/lib/api';
 import { Artwork } from '../src/components/primitives';
 
 const cover = 'https://lh3.googleusercontent.com/album-cover=w544-h544-l90-rj';
@@ -15,6 +16,10 @@ describe('catalog artwork', () => {
     const url = 'https://i.ytimg.com/vi/song/hqdefault.jpg';
     expect(bestThumbnail({ thumbnails: [{ url: 'https://example.com/small.jpg', width: 100, height: 100 }, { url, width: 480, height: 360 }] })).toBe(url);
     expect(bestThumbnail({ thumbnail: url })).toBe(url);
+  });
+  it('uses the actual song thumbnail when playlist rows omit artwork', () => {
+    expect(normalizeMedia({ id: 'dQw4w9WgXcQ', title: 'Song', kind: 'song' })?.artwork).toBe('https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg');
+    expect(normalizeMedia({ id: 'local-file', title: 'File', kind: 'local' })?.artwork).toBe('');
   });
   it('recovers old saved maxres URLs using the same song’s available cover', () => {
     render(<Artwork src="https://i.ytimg.com/vi/song/maxresdefault.jpg" alt="Album cover" />);

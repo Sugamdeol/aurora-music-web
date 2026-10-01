@@ -61,7 +61,7 @@ export function normalizeMedia(value: unknown, fallback: MediaKind = 'song'): Me
       artistId: asString(source.artistId ?? source.artist_id) || artists[0]?.id,
       album: asString(source.album),
       albumId: asString(source.albumId ?? source.album_id),
-      artwork,
+      artwork: artwork || (kind !== 'local' && /^[A-Za-z0-9_-]{11}$/.test(id) ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : ''),
       durationSeconds: parseDuration(source.durationSeconds ?? source.duration_seconds ?? source.duration),
       durationLabel,
       source: kind === 'local' || source.local === true ? 'local' : 'remote',
@@ -196,7 +196,7 @@ export const api = {
     const body = asRecord(await requestJson([`/api/v1/${kind}/${safeId}`, `/api/${kind}/${safeId}`], { signal }));
     const header = asRecord(body[kind] ?? body.header ?? body.entity);
     const albumArtwork = kind === 'album' ? upgradedArtwork(header.artwork ?? header.thumbnail) : '';
-    const sections = asArray(body.sections).map(normalizeSection).filter((section): section is MediaSection => section !== null).map((section) => ({ ...section, items: section.items.map((item) => albumArtwork && !item.artwork ? { ...item, artwork: albumArtwork } : item) }));
+    const sections = asArray(body.sections).map(normalizeSection).filter((section): section is MediaSection => section !== null).map((section) => ({ ...section, items: section.items.map((item) => albumArtwork ? { ...item, artwork: albumArtwork } : item) }));
     if (kind === 'playlist' && Array.isArray(body.items)) {
       const playlistSection = normalizeSection({ title: 'Track list', items: body.items }, sections.length);
       if (playlistSection) sections.push(playlistSection);
