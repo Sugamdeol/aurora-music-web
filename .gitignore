@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build-server/
+coverage/
+playwright-report/
+test-results/
+.claude/
+.vercel/
+.render-python/
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+*.log
+screenshots/

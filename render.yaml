@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: aurora-music-web
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: npm ci && npm run build && python3 -m venv .render-python && .render-python/bin/pip install --disable-pip-version-check --no-cache-dir -r requirements.txt
+    startCommand: npm start
+    healthCheckPath: /api/v1/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: 22.18.0
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY
+        value: "1"
+      - key: YT_DLP_PATH
+        value: .render-python/bin/yt-dlp
+      - key: YT_DLP_JS_RUNTIME
+        value: node
+      # Signs sync sessions independently of the MantleDB storage key, so
+      # rotating storage credentials never invalidates every user's session.
+      - key: SYNC_SESSION_SECRET
+        generateValue: true
+      # YouTube bot-gates datacenter IPs ("Sign in to confirm you're not a
+      # bot"), which silently breaks streaming on fresh deploys. To fix:
+      #   1. Export cookies from a browser signed in to YouTube (cookies.txt
+      #      format, e.g. with a "Get cookies.txt LOCALLY" extension).
+      #   2. In Render: service -> Secret Files -> add "yt-dlp-cookies.txt"
+      #      (it lands at /etc/secrets/yt-dlp-cookies.txt).
+      # Without the file the app still runs; some videos just refuse to play.
+      - key: YT_DLP_COOKIE_FILE
+        value: /etc/secrets/yt-dlp-cookies.txt

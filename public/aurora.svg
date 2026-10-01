@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108" role="img" aria-labelledby="aurora-title">
+  <title id="aurora-title">Aurora Music</title>
+  <path fill="#0b0d0b" d="M54,4 C82,4 104,26 104,54 C104,82 82,104 54,104 C26,104 4,82 4,54 C4,26 26,4 54,4 Z"/>
+  <path fill="#121712" d="M54,10 C78.3,10 98,29.7 98,54 C98,78.3 78.3,98 54,98 C29.7,98 10,78.3 10,54 C10,29.7 29.7,10 54,10 Z"/>
+  <path fill="none" d="M29,78 C39,63 48,44 55,25 C62,44 71,63 81,78" stroke="#8aff18" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path fill="none" d="M39,62 C47,59 55,58 63,60 C67,61 71,63 75,65" stroke="#c9ff7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path fill="none" d="M39,76 L48,76 L54,68 L60,83 L67,72 L76,72" stroke="#eaffc4" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path fill="#8aff18" d="M55,24 m-3.2,0 a3.2,3.2 0 1,0 6.4,0 a3.2,3.2 0 1,0 -6.4,0"/>
+</svg>
