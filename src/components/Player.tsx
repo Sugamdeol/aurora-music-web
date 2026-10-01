@@ -79,7 +79,7 @@ function Progress() {
       <i className="buffer-spine" style={{ '--buffered': `${bufferedPercent}%` } as React.CSSProperties} aria-hidden="true" />
       <input type="range" min="0" max={duration || 1} step="0.1" value={Math.min(position, duration || 1)} onChange={(event) => { seek(Number(event.target.value)); broadcastSeek(); }} aria-label="Track progress" style={{ '--progress': `${percent}%` } as React.CSSProperties} />
     </span>
-    <span>{formatDuration(duration)}</span>
+    <span>−{formatDuration(Math.max(0, duration - position))}</span>
   </div><BufferStatus /></div>;
 }
 
@@ -91,9 +91,9 @@ function PlaybackControls({ large = false }: { large?: boolean }) {
   const { togglePlayback, previous, next, toggleShuffle, cycleRepeat } = usePlaybackStore.getState();
   return <div className={`playback-controls ${large ? 'playback-controls-large' : ''}`}>
     {large && <IconButton icon="shuffle" label="Toggle shuffle" active={shuffle} onClick={toggleShuffle} />}
-    <IconButton icon="previous" label="Previous track" onClick={previous} />
+    <IconButton icon={large ? 'backward' : 'previous'} label="Previous track" onClick={previous} />
     <button className={`main-play ${large ? 'main-play-large' : ''} ${status === 'loading' ? 'is-loading' : ''}`} onClick={togglePlayback} aria-label={playing ? 'Pause' : 'Play'}><Icon name={playing ? 'pause' : 'play'} size={large ? 28 : 21} /></button>
-    <IconButton icon="next" label="Next track" onClick={() => next()} />
+    <IconButton icon={large ? 'forward' : 'next'} label="Next track" onClick={() => next()} />
     {large && <IconButton icon={repeat === 'one' ? 'repeat-one' : 'repeat'} label={`Repeat ${repeat}`} active={repeat !== 'off'} onClick={cycleRepeat} />}
   </div>;
 }
@@ -260,8 +260,9 @@ function TrackLyrics({ romanized }: { romanized: boolean }) {
     {loading && <div className="lyric-loading"><i /><i /><i /><span>Finding synced lyrics across Aurora sources</span></div>}
     {!loading && !ready && <div className="lyrics-empty"><Icon name={error ? 'wifi' : 'lyrics'} /><strong>{error ? 'Lyrics could not be reached' : 'No lyrics found yet'}</strong><span>{error ? 'Check your connection and try again.' : 'Aurora checked its lyric sources. Try again in a moment.'}</span><button className="text-button" onClick={() => void query.refetch()}>Try again</button></div>}
     {ready && <>
-      <div className="lyrics-provider">{query.data?.synced ? 'Synced lyrics' : 'Lyrics'}{query.data?.provider && <span> · {query.data.provider}</span>}</div>
+      <details className="lyric-settings"><summary>Lyrics settings</summary><div className="lyrics-provider">{query.data?.synced ? 'Synced lyrics' : 'Lyrics'}{query.data?.provider && <span> · {query.data.provider}</span>}</div>
       {query.data?.synced && <div className="lyric-timing"><span>Lyric timing</span><button disabled={timing.id !== track?.id} aria-label="Show lyrics 250 milliseconds earlier" onClick={() => adjustOffset(offset - 250)}>−</button><output>{offset > 0 ? '+' : ''}{offset} ms</output><button disabled={timing.id !== track?.id} aria-label="Show lyrics 250 milliseconds later" onClick={() => adjustOffset(offset + 250)}>+</button><button className="lyric-timing-reset" disabled={timing.id !== track?.id} onClick={() => adjustOffset(0)}>Reset</button></div>}
+      </details>
       {timingError && <small className="danger" role="status">{timingError}</small>}
       <div className="lyric-lines" ref={viewport} data-synced={query.data?.synced ? 'true' : 'false'}>
         {lyrics.map((line, index) => <button type="button" data-lyric-index={index} key={`${line.time ?? 'plain'}-${index}`} className={`lyric-line ${index === currentLine && line.time !== undefined ? 'is-current' : ''} ${line.time === undefined ? 'is-plain' : ''}`} onClick={() => { if (line.time !== undefined) { seek(line.time + offset / 1000); broadcastSeek(); } }} aria-current={index === currentLine ? 'true' : undefined}><span>{line.text}</span>{romanized && line.romanized && <small className="romanized-lyric">{line.romanized}</small>}</button>)}
@@ -401,29 +402,32 @@ function FullPlayer() {
       if (sheet) { sheet.style.transform = ''; sheet.style.opacity = ''; }
     },
   };
-  return <div className="full-player" ref={dialogRef} role="dialog" aria-modal="true" aria-label={`Now playing ${track.title}`} tabIndex={-1}>
+  return <div className="full-player reference-player" ref={dialogRef} role="dialog" aria-modal="true" aria-label={`Now playing ${track.title}`} tabIndex={-1}>
     <div className="player-ambient" style={track.artwork ? { backgroundImage: `url("${track.artwork.replace(/"/g, '%22')}")` } : undefined} />
-    <header className="full-player-top" {...swipeDown}><IconButton icon="chevron-down" label="Close full player" onClick={close} /><span>Playing from <strong>{context}</strong></span><div className="full-player-top-actions"><IconButton icon="lyrics" label={lyricsVisible ? 'Hide lyrics' : 'Show lyrics'} active={lyricsVisible} onClick={() => { const next = !lyricsVisible; setLyricsVisible(next); void setSetting('player.lyrics.enabled', next); }} /><IconButton icon="queue" label="Open queue" onClick={() => openSheet('queue')} /></div></header>
+    <header className="full-player-top" {...swipeDown}><IconButton icon="x" label="Close full player" onClick={close} /><span>Playing from <strong>{context}</strong></span><div className="full-player-top-actions"><IconButton icon="lyrics" label={lyricsVisible ? 'Hide lyrics' : 'Show lyrics'} active={lyricsVisible} onClick={() => { const next = !lyricsVisible; setLyricsVisible(next); void setSetting('player.lyrics.enabled', next); }} /><IconButton icon="queue" label="Open queue" onClick={() => openSheet('queue')} /></div></header>
     <div className={`full-player-body ${lyricsVisible ? '' : 'lyrics-hidden'}`}>
       <section className="full-player-media" aria-label="Playback controls">
-        <div className="full-artwork-wrap" ref={artworkWrapRef}><Artwork className="full-artwork" src={track.artwork} title={track.title} /></div>
+        <div className="full-artwork-wrap" ref={artworkWrapRef}><Artwork className="full-artwork" src={track.artwork} title={track.title} loading="eager" sizes="(max-width: 760px) 80vw, 440px" /></div>
         <div className="full-track-copy"><div><h1><Marquee text={track.title} /></h1><p>{track.artist}{track.album ? <span>{track.album}</span> : null}</p></div><IconButton icon="heart" label={liked ? 'Unlike track' : 'Like track'} active={liked} onClick={() => void toggleLike(track)} /></div>
         <Progress />
         <PlaybackControls large />
+        <label className="reference-volume"><Icon name="volume" size={15} /><input type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => setVolume(Number(event.target.value))} aria-label="Volume" style={{ '--volume': `${volume * 100}%` } as React.CSSProperties} /></label>
+        <details className="player-options"><summary aria-label="More player options"><Icon name="more" size={18} /><span>Options</span></summary><div className="player-options-content">
         <div className="player-tools"><PlaybackSpeed /><div className="seek-buttons"><button onClick={() => { const player = usePlaybackStore.getState(); player.seek(player.position - 10); broadcastSeek(); }} aria-label="Rewind ten seconds">−10s</button><button onClick={() => { const player = usePlaybackStore.getState(); player.seek(player.position + 10); broadcastSeek(); }} aria-label="Forward ten seconds">+10s</button></div></div>
         <div className="full-player-actions">
           <button onClick={() => openSheet('queue')}><Icon name="queue" /><span>Queue</span></button>
           <button onClick={() => openSheet('sleep')}><Icon name="clock" /><span>Sleep</span></button>
           <button onClick={() => openSheet('equalizer')}><Icon name="sliders" /><span>Sound</span></button>
-          <label><Icon name="volume" /><input type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => setVolume(Number(event.target.value))} aria-label="Volume" /></label>
         </div>
         <TrackActions track={track} />
         {nextTrack && <button className="next-track-card" onClick={() => openSheet('queue')}><Artwork src={nextTrack.artwork} title={nextTrack.title} /><span><small>{nextTrack.recommended ? 'Suggested next' : 'Up next'}</small><strong>{nextTrack.title}</strong><span>{nextTrack.artist}</span></span><Icon name="queue" /></button>}
         <p className="player-keyboard-hint">Space to play · ← / → seek 10s · Shift + arrows change song · M to mute</p>
+        </div></details>
         {status === 'error' && <div className="player-error" role="alert">{error}<button onClick={() => usePlaybackStore.getState().retrySource()}>Retry</button></div>}
       </section>
       {lyricsVisible && <section className="full-player-lyrics" aria-label="Synced lyrics"><header><div><span>LIVE LYRICS</span><h2>Sing along</h2><p>{track.artist}</p></div><button className={`romanization-toggle ${romanizedLyrics ? 'is-active' : ''}`} aria-pressed={romanizedLyrics} onClick={() => { const next = !romanizedLyrics; setRomanizedLyrics(next); void setSetting('player.lyrics.romanized', next); }}><Icon name="lyrics" size={15} /><span>{romanizedLyrics ? 'Romanized on' : 'Romanize'}</span></button></header><TrackLyrics romanized={romanizedLyrics} /></section>}
     </div>
+    <IconButton icon="queue" label="Open playback queue" className="reference-queue" onClick={() => openSheet('queue')} />
   </div>;
 }
 

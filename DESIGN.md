@@ -38,6 +38,10 @@ The product is English-first and supports multilingual music names. On mobile, l
 
 Collection pages each have their own reading order: albums foreground release art and track order, artists lead with popular songs and browseable releases, and playlists make owner, duration, and track editing visible. Keep related shelves outside the main track list, and retain working links between artist and album credits.
 
+The October home reference adds YouTube Music-style artist, album, community, discovery, and performance shelves. Mix compact two-column song picks with square release cards and landscape video cards. Reuse real catalog artwork and the existing playable rows; retain the current Aurora welcome and saved-library areas.
+
+The expanded player follows the supplied Apple Music reference: a continuous artwork-coloured background, square cover on the left, open lyrics on the right, compact metadata, thin white progress/volume sliders, and white transport controls. Extra playback tools sit in an accessible Options disclosure. `src/player-reference.css` owns this scoped player variant, including its white foreground tokens; the lime app palette remains owned by `src/styles.css`. On phones, artwork and lyrics stack and smooth mode uses a smaller blur.
+
 ## Token ownership
 
 The existing `:root` variables in `src/styles.css` own the runtime colors, type families, and radii. This file records their intent and exact accepted values; do not duplicate them as a second CSS theme. The AI and audio studios consume those shared tokens in their page styles. The AI studio's olive record artwork and the audio studio's listening field are page-level illustrations, not new global color tokens.

@@ -24,6 +24,7 @@ beforeEach(async () => {
   useRoomStore.setState({ username: 'Sugam' });
   useYouTubeAccountStore.setState({ likedTracks: [], connected: false });
   vi.spyOn(api, 'home').mockResolvedValue([]);
+  vi.spyOn(api, 'search').mockResolvedValue([]);
   vi.spyOn(api, 'related').mockResolvedValue([]);
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
 });

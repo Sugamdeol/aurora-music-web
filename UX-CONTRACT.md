@@ -32,6 +32,9 @@ Track credits link to their artist and album pages without changing the play con
 
 ## Navigation and controls
 
+- Home discovery shelves load near the viewport and reuse the shared catalog query cache. Each shelf has its own retry/empty state, playable queue context, and a More link that preserves the search type. Saved music remains usable if online discovery fails.
+- The full player keeps progress, volume, transport, liked state, synced lyric seeking, and queue actions in the shared playback store. Options reveals speed, seek shortcuts, sleep, sound, sharing, and next-track controls. The disclosure participates in the modal keyboard focus loop.
+
 - `src/components/AppShell.tsx` owns desktop and mobile navigation. AI Studio is `/ai`; Audio Studio is `/audio-studio`; local playlists live under `/playlist/local/:id`.
 - `src/styles.css` owns global scrollbar, focus, button and navigation treatments. `src/pages/AiPage.css` owns Studio-specific artwork and layout only.
 - Native `<select>` owns playlist choice, native `<textarea>` owns the mood prompt, and native checkboxes own preview selection. All retain labels and visible keyboard focus.

@@ -2,7 +2,7 @@ import type { SVGProps } from 'react';
 
 export type IconName =
   | 'home' | 'search' | 'library' | 'users' | 'settings' | 'chart' | 'heart' | 'plus'
-  | 'play' | 'pause' | 'stop' | 'next' | 'previous' | 'shuffle' | 'repeat' | 'repeat-one'
+  | 'play' | 'pause' | 'stop' | 'next' | 'previous' | 'backward' | 'forward' | 'shuffle' | 'repeat' | 'repeat-one'
   | 'queue' | 'lyrics' | 'volume' | 'mute' | 'chevron-down' | 'chevron-right'
   | 'arrow-left' | 'more' | 'music' | 'disc' | 'clock' | 'folder' | 'upload'
   | 'trash' | 'download' | 'check' | 'x' | 'sparkles' | 'wifi' | 'copy' | 'drag' | 'sun' | 'moon' | 'sliders' | 'share' | 'radio' | 'spatial';
@@ -27,6 +27,8 @@ const paths: Record<IconName, React.ReactNode> = {
   stop: <rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" stroke="none" />,
   next: <><path d="m5 4 10 8-10 8z" /><path d="M19 5v14" /></>,
   previous: <><path d="M19 20 9 12l10-8z" /><path d="M5 19V5" /></>,
+  backward: <path d="m12 5-10 7 10 7V5zm10 0-10 7 10 7V5z" fill="currentColor" stroke="none" />,
+  forward: <path d="m2 5 10 7-10 7V5zm10 0 10 7-10 7V5z" fill="currentColor" stroke="none" />,
   shuffle: <><path d="m18 14 4 4-4 4m0-20 4 4-4 4M2 18h2.5a6 6 0 0 0 4.2-1.7l6.6-6.6A6 6 0 0 1 19.5 8H22M2 6h2.5a6 6 0 0 1 4.2 1.7M14 14l1.5 1.5A6 6 0 0 0 19.5 18H22" /></>,
   repeat: <><path d="m17 2 4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4m14-5v2a3 3 0 0 1-3 3H3" /></>,
   'repeat-one': <><path d="m17 2 4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4m14-5v2a3 3 0 0 1-3 3H3" /><path d="M11 10h2v5m-2 0h4" /></>,

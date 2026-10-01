@@ -7,6 +7,7 @@ import { useLibraryStore } from '../store/library';
 import { usePlaybackStore } from '../store/playback';
 import { useRoomStore } from '../room/client';
 import { MediaCard, PlaylistCard, SongRow } from '../components/Media';
+import { HomeDiscovery } from '../components/HomeDiscovery';
 import { Artwork, EmptyState, ErrorState, Section, Skeleton } from '../components/primitives';
 import { Icon } from '../components/Icon';
 import { db } from '../lib/db';
@@ -80,6 +81,7 @@ export function HomePage() {
   const discovery = useQuery({ queryKey: ['home'], queryFn: ({ signal }) => api.home(signal), staleTime: 5 * 60_000, retry: 1 });
   const discoveryTracks = useMemo(() => discovery.data?.flatMap((section) => section.items).filter((item): item is MediaTrack => 'source' in item) ?? [], [discovery.data]);
   const familiar = useMemo(() => uniqueTracks([...liked, ...recent, ...(library.data?.topTracks ?? []), ...youtubeLikes]).slice(0, 20), [liked, recent, library.data?.topTracks, youtubeLikes]);
+  const discoveryArtists = useMemo(() => (library.data?.artists ?? []).map((artist) => artist.name), [library.data?.artists]);
   const mix = useMemo(() => dailyMix(familiar, personal.data?.length ? personal.data : discoveryTracks, Math.floor(dayStart / 86_400_000)), [familiar, personal.data, discoveryTracks, dayStart]);
   useEffect(() => {
     const first = mix[0];
@@ -133,7 +135,7 @@ export function HomePage() {
     </Section>
     {discovery.isLoading && <Section title="Exploring new sounds"><div className="horizontal-shelf">{[1, 2, 3, 4, 5].map((item) => <Skeleton key={item} className="media-skeleton" />)}</div></Section>}
     {discovery.isError && <ErrorState title="Discovery is taking a moment" message="Online music could not be loaded. Your saved favorites and local music are still available." retry={() => void discovery.refetch()} />}
-    {discovery.data?.slice(0, 5).map((section) => { const tracks = section.items.filter((item): item is MediaTrack => 'source' in item); return <Section key={section.id} title={section.title}><div className="horizontal-shelf">{section.items.slice(0, 10).map((item, index) => <MediaCard key={`${item.id}-${index}`} item={item} context={tracks} contextLabel={section.title} />)}</div></Section>; })}
+    <HomeDiscovery artists={discoveryArtists} seeds={familiar} catalog={discovery.data} />
     <section className="home-explore-footer"><span>Keep following the sound.</span><div>{['Punjabi', 'Hindi', 'R&B', 'Indie', 'K-pop', 'Jazz'].map((genre) => <Link key={genre} to={`/search?q=${encodeURIComponent(`${genre} music`)}`}>{genre}<Icon name="chevron-right" size={13} /></Link>)}</div></section>
   </div>;
 }
