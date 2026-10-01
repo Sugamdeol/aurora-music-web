@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { liveQuery } from 'dexie';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useLibraryStore } from '../store/library';
 import { usePlaybackStore } from '../store/playback';
-import { PlaylistCard, SongRow } from '../components/Media';
+import { MediaCard, PlaylistCard, SongRow } from '../components/Media';
 import { EmptyState, PageHeader, Pill } from '../components/primitives';
 import { Icon } from '../components/Icon';
 import { filterTracks, shuffledTracks, type TrackSort } from '../lib/collections';
@@ -11,8 +12,8 @@ import { useDialog } from '../hooks/useDialog';
 import type { MediaEntity, MediaTrack } from '../domain/media';
 import { getSavedEntities } from '../lib/entityLibrary';
 
-type Tab = 'recent' | 'liked' | 'top' | 'albums' | 'artists' | 'playlists' | 'local';
-const tabs: Array<[Tab, string]> = [['recent', 'Recent'], ['liked', 'Liked'], ['top', 'Top 50'], ['albums', 'Albums'], ['artists', 'Artists'], ['playlists', 'Playlists'], ['local', 'Local files']];
+type Tab = 'saved' | 'recent' | 'liked' | 'top' | 'albums' | 'artists' | 'playlists' | 'local';
+const tabs: Array<[Tab, string]> = [['saved', 'Saved'], ['recent', 'Recent'], ['liked', 'Liked'], ['top', 'Top 50'], ['albums', 'Albums'], ['artists', 'Artists'], ['playlists', 'Playlists'], ['local', 'Local files']];
 const tabValues = tabs.map(([value]) => value);
 
 /** Combine followed/saved entities with entities inferred from the user's tracks. */
@@ -64,11 +65,11 @@ export function LibraryPage() {
   const [savedAlbums, setSavedAlbums] = useState<MediaEntity[]>([]);
   const [followedArtists, setFollowedArtists] = useState<MediaEntity[]>([]);
   useEffect(() => {
-    let active = true;
-    void Promise.all([getSavedEntities('album'), getSavedEntities('artist')]).then(([albums, artists]) => {
-      if (active) { setSavedAlbums(albums); setFollowedArtists(artists); }
-    }).catch(() => undefined);
-    return () => { active = false; };
+    const subscription = liveQuery(() => Promise.all([getSavedEntities('album'), getSavedEntities('artist')])).subscribe({
+      next: ([albums, artists]) => { setSavedAlbums(albums); setFollowedArtists(artists); },
+      error: () => undefined,
+    });
+    return () => subscription.unsubscribe();
   }, []);
   useEffect(() => {
     if (tab !== 'top') return;
@@ -142,6 +143,13 @@ export function LibraryPage() {
     <div className="library-toolbar glass-surface"><label className="library-filter"><Icon name="search" size={18} /><input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={tab === 'playlists' ? 'Find a playlist' : 'Filter by song, artist, or album'} aria-label="Search your library" />{filter && <button onClick={() => setFilter('')} aria-label="Clear library search"><Icon name="x" size={16} /></button>}</label><label className="library-sort"><span>Sort by</span><select aria-label="Sort library" value={tab === 'playlists' && sort !== 'title' ? 'saved' : sort} onChange={(event) => setSort(event.target.value as TrackSort)}><option value="saved">{tab === 'playlists' ? 'Recently updated' : 'Default order'}</option><option value="title">{tab === 'playlists' ? 'Playlist name' : 'Song title'}</option>{tab !== 'playlists' && <><option value="artist">Artist</option><option value="duration">Duration</option></>}</select></label></div>
 
     <section className="library-content">
+      {tab === 'saved' && <>
+        <h2>Saved albums</h2>
+        {savedAlbums.filter((album) => !term || `${album.title} ${album.artist ?? ''}`.toLocaleLowerCase().includes(term)).length ? <div className="media-grid">{savedAlbums.filter((album) => !term || `${album.title} ${album.artist ?? ''}`.toLocaleLowerCase().includes(term)).map((album) => <MediaCard key={album.id} item={album} />)}</div> : <EmptyState icon="disc" title={term ? 'No matching saved albums' : 'No saved albums yet'}>Tap Save album on an album page to keep it here.</EmptyState>}
+        <h2>Saved playlists</h2>
+        {visiblePlaylists.length ? <div className="media-grid">{visiblePlaylists.map((playlist) => <PlaylistCard key={playlist.id} id={playlist.id} title={playlist.name} artwork={playlist.artwork || playlist.tracks[0]?.artwork} count={playlist.tracks.length} />)}</div> : <EmptyState icon="music" title="No saved playlists yet">Save a playlist or make your own to keep it here.</EmptyState>}
+      </>}
+
       {tab === 'playlists' && (visiblePlaylists.length ? <div className="media-grid">{visiblePlaylists.map((playlist) => <PlaylistCard key={playlist.id} id={playlist.id} title={playlist.name} artwork={playlist.artwork || playlist.tracks[0]?.artwork} count={playlist.tracks.length} />)}</div> : filter && playlists.length ? <EmptyState icon="search" title="No matching playlists" action={<button className="text-button" onClick={() => setFilter('')}>Clear search</button>}>Try a different playlist name.</EmptyState> : <EmptyState icon="disc" title="Make your first playlist" action={<button className="primary-button" onClick={() => setCreating(true)}>Create playlist</button>}>Collect tracks for a mood, a trip, or a day worth remembering.</EmptyState>)}
       {tab === 'local' && <div className="local-import-bar"><div><Icon name="folder" /><span><strong>On this device</strong><small>Audio stays in this browser.</small></span></div><button className="secondary-button" onClick={() => inputRef.current?.click()} disabled={importing}><Icon name="upload" size={16} /> {importing ? 'Importing…' : 'Add music'}</button><input ref={inputRef} hidden type="file" accept="audio/*,.mp3,.m4a,.aac,.flac,.wav,.ogg,.opus,.webm" multiple onChange={onFiles} /></div>}
       {isGroupTab && (visibleGroups.length ? <div className="media-grid library-groups">{visibleGroups.map((group) => {
@@ -152,7 +160,7 @@ export function LibraryPage() {
           ? <Link key={`${group.id || group.name}-${group.name}`} className={`library-group ${tab === 'artists' ? 'is-artist' : ''}`} to={to}>{body}</Link>
           : <button key={`${group.id || group.name}-${group.name}`} className={`library-group ${tab === 'artists' ? 'is-artist' : ''}`} onClick={() => usePlaybackStore.getState().playTracks(group.tracks, 0, group.name)}>{body}</button>;
       })}</div> : <EmptyState icon={tab === 'albums' ? 'disc' : 'users'} title={term ? `No matching ${tab}` : `No ${tab} yet`}>{term ? 'Try another name.' : 'Play or save some music and it will group here.'}</EmptyState>)}
-      {!isGroupTab && tab !== 'playlists' && (visibleTracks.length ? <><div className="library-content-head"><span>{visibleTracks.length} {visibleTracks.length === 1 ? 'track' : 'tracks'}{filter ? ` of ${tracks.length}` : ''}</span><div className="library-play-actions"><button className="text-button" onClick={() => playAll(true)}><Icon name="shuffle" size={15} /> Shuffle</button><button className="secondary-button" onClick={() => playAll()}><Icon name="play" size={15} /> Play all</button></div></div><div className="song-list">{visibleTracks.map((track, index) => <SongRow key={track.id} track={track} context={visibleTracks} contextLabel={label} index={index} />)}</div></> : filter && tracks.length ? <EmptyState icon="search" title="No matching songs" action={<button className="text-button" onClick={() => setFilter('')}>Clear search</button>}>Try another song, artist, or album.</EmptyState> : <EmptyState icon={tab === 'liked' ? 'heart' : tab === 'local' ? 'folder' : tab === 'top' ? 'chart' : 'clock'} title={tab === 'liked' ? 'No liked songs yet' : tab === 'local' ? 'Bring your own music' : tab === 'top' ? 'No top songs yet' : 'Your listening starts here'}>{tab === 'liked' ? 'Tap the heart beside a song you want to keep.' : tab === 'local' ? 'Add audio files from this device to listen in Aurora.' : tab === 'top' ? 'Your 50 most-played songs will collect here as you listen.' : 'Songs you play will be waiting here when you come back.'}</EmptyState>)}
+      {!isGroupTab && tab !== 'saved' && tab !== 'playlists' && (visibleTracks.length ? <><div className="library-content-head"><span>{visibleTracks.length} {visibleTracks.length === 1 ? 'track' : 'tracks'}{filter ? ` of ${tracks.length}` : ''}</span><div className="library-play-actions"><button className="text-button" onClick={() => playAll(true)}><Icon name="shuffle" size={15} /> Shuffle</button><button className="secondary-button" onClick={() => playAll()}><Icon name="play" size={15} /> Play all</button></div></div><div className="song-list">{visibleTracks.map((track, index) => <SongRow key={track.id} track={track} context={visibleTracks} contextLabel={label} index={index} />)}</div></> : filter && tracks.length ? <EmptyState icon="search" title="No matching songs" action={<button className="text-button" onClick={() => setFilter('')}>Clear search</button>}>Try another song, artist, or album.</EmptyState> : <EmptyState icon={tab === 'liked' ? 'heart' : tab === 'local' ? 'folder' : tab === 'top' ? 'chart' : 'clock'} title={tab === 'liked' ? 'No liked songs yet' : tab === 'local' ? 'Bring your own music' : tab === 'top' ? 'No top songs yet' : 'Your listening starts here'}>{tab === 'liked' ? 'Tap the heart beside a song you want to keep.' : tab === 'local' ? 'Add audio files from this device to listen in Aurora.' : tab === 'top' ? 'Your 50 most-played songs will collect here as you listen.' : 'Songs you play will be waiting here when you come back.'}</EmptyState>)}
     </section>
 
     <p className="library-footnote">Your library is stored locally. <Link to="/history">Listening history</Link> · <Link to="/settings">Manage storage and backup</Link></p>

@@ -183,6 +183,7 @@ export function EntityPage({ forcedKind, local: isLocal = false }: { forcedKind?
       </div>
     </section>
 
+    {saved && detail.kind === 'album' && <p className="transition-note"><Link to="/library?tab=saved">View saved albums</Link></p>}
     {shareMessage && <p role="status" className="transition-note">{shareMessage}{savedPlaylistId && <Link to={`/playlist/local/${encodeURIComponent(savedPlaylistId)}`}> Open saved playlist</Link>}</p>}
 
     {localPlaylist && <div className="playlist-edit-entry">

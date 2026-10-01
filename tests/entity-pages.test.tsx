@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { EntityDetail, MediaEntity, MediaTrack } from '../src/domain/media';
 import { api } from '../src/lib/api';
+import { setEntitySaved } from '../src/lib/entityLibrary';
 import { db, getSetting } from '../src/lib/db';
 import { LibraryPage } from '../src/pages/LibraryPage';
 import { EntityPage } from '../src/pages/EntityPage';
@@ -68,4 +69,14 @@ describe('collection pages', () => {
     render(<MemoryRouter initialEntries={['/library?tab=artists']}><LibraryPage /></MemoryRouter>);
     expect(await screen.findByRole('link', { name: /Sample Artist/ })).toHaveAttribute('href', '/artist/artist-1');
   });
+});
+
+it('shows a saved album without playing it and updates after save or removal', async () => {
+  const album: EntityDetail = { kind: 'album', id: 'saved-album', title: 'Saved Moonrise', artwork: 'https://example.com/cover.jpg', sections: [], tracks: [] };
+  render(<MemoryRouter initialEntries={['/library?tab=saved']}><LibraryPage /></MemoryRouter>);
+  await screen.findByText('No saved albums yet');
+  await act(async () => { await setEntitySaved(album, true); });
+  expect(await screen.findByRole('link', { name: /Saved Moonrise/ })).toHaveAttribute('href', '/album/saved-album');
+  await act(async () => { await setEntitySaved(album, false); });
+  await waitFor(() => expect(screen.queryByRole('link', { name: /Saved Moonrise/ })).not.toBeInTheDocument());
 });
