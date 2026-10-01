@@ -1,0 +1,33 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { TrackLyrics } from '../src/components/TrackLyrics';
+import { api } from '../src/lib/api';
+import { db, getSetting } from '../src/lib/db';
+import { usePlaybackStore } from '../src/store/playback';
+
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+it('selects providers and persists custom timed lyrics with corrected romanization', async () => {
+  HTMLElement.prototype.scrollTo = vi.fn();
+  await db.settings.clear();
+  const lyrics = vi.spyOn(api, 'lyrics').mockResolvedValue({ lines: [], provider: 'LRCLIB', synced: false });
+  const romanize = vi.spyOn(api, 'romanizeLyrics');
+  usePlaybackStore.setState({ currentTrack: { id: 'lyrics-settings-test', kind: 'song', source: 'remote', title: 'Lyrics test', artist: 'Artist' }, position: 0 });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><TrackLyrics romanized /></QueryClientProvider>);
+  const source = screen.getByRole('combobox', { name: 'Lyrics source' });
+  await waitFor(() => expect(source).not.toBeDisabled());
+  fireEvent.change(source, { target: { value: 'LRCLIB' } });
+  await waitFor(() => expect(lyrics).toHaveBeenCalledWith(expect.anything(), expect.anything(), { source: 'LRCLIB', language: 'auto' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Your lyrics' }), { target: { value: '[00:12.50] दिल मेरा' } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Your romanized lyrics' }), { target: { value: '[00:12.50] Dil mera' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save my lyrics' }));
+  expect(await screen.findByText('Your lyrics are saved on this device.')).toBeInTheDocument();
+  expect(await getSetting('lyrics.preferences.lyrics-settings-test', null)).toMatchObject({ source: 'custom', customLines: [{ time: 12.5, text: 'दिल मेरा', romanized: 'Dil mera' }] });
+  expect(romanize).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'दिल मेरा Dil mera' }));
+  expect(usePlaybackStore.getState().position).toBe(12.5);
+  fireEvent.click(screen.getByRole('button', { name: 'Remove my lyrics' }));
+  await waitFor(() => expect(source).toHaveValue('auto'));
+  client.clear();
+});

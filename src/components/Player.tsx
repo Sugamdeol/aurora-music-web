@@ -1,6 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '../lib/api';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { formatDuration } from '../domain/media';
 import { useLibraryStore } from '../store/library';
 import { usePlaybackStore } from '../store/playback';
@@ -11,7 +9,7 @@ import { getSetting, setSetting } from '../lib/db';
 import { Link } from 'react-router-dom';
 import { EqualizerControls } from './EqualizerControls';
 import { TrackActions } from './TrackActions';
-import { lyricIndexAt } from '../lib/trackActions';
+import { TrackLyrics } from './TrackLyrics';
 import { useDialog } from '../hooks/useDialog';
 
 // Where the dock artwork sat when the full player was opened — the artwork
@@ -201,73 +199,6 @@ function QueueSheet() {
     {filter && !visibleQueue.length && <p className="sheet-empty">No songs match “{filter}”.</p>}
     {!queue.length && <p className="sheet-empty">Your queue is empty.</p>}
     {queue.length > 0 && <button className="text-button danger queue-stop" onClick={clear}>Stop playback and clear queue</button>}
-  </div>;
-}
-
-function TrackLyrics({ romanized }: { romanized: boolean }) {
-  const track = usePlaybackStore((state) => state.currentTrack);
-  const position = usePlaybackStore((state) => state.position);
-  const seek = usePlaybackStore((state) => state.seek);
-  const viewport = useRef<HTMLDivElement>(null);
-  const [timing, setTiming] = useState<{ id: string; offset: number }>({ id: '', offset: 0 });
-  const offset = timing.id === track?.id ? timing.offset : 0;
-  const [timingError, setTimingError] = useState('');
-  useEffect(() => {
-    let active = true;
-    setTimingError('');
-    if (track) void getSetting<number>(`lyrics.offset.${track.id}`, 0).then((value) => {
-      if (active) setTiming({ id: track.id, offset: Number.isFinite(value) ? Math.max(-10_000, Math.min(10_000, value)) : 0 });
-    }).catch(() => { if (active) { setTiming({ id: track.id, offset: 0 }); setTimingError('Saved timing could not be loaded.'); } });
-    return () => { active = false; };
-  }, [track?.id]);
-  const adjustOffset = (value: number) => {
-    if (!track) return;
-    const next = Math.max(-10_000, Math.min(10_000, value));
-    setTiming({ id: track.id, offset: next }); setTimingError('');
-    void setSetting(`lyrics.offset.${track.id}`, next).catch(() => setTimingError('Timing changed, but could not be saved.'));
-  };
-  const query = useQuery({
-    queryKey: ['lyrics', track?.id],
-    queryFn: ({ signal }) => api.lyrics(track!, signal),
-    enabled: Boolean(track && track.source !== 'local'),
-    staleTime: 30 * 60_000,
-    retry: 1,
-  });
-  const lyrics = query.data?.lines ?? [];
-  const lyricTimes = useMemo(() => lyrics.map((line) => line.time), [lyrics]);
-  const currentLine = lyricIndexAt(lyricTimes, position, offset);
-  useEffect(() => {
-    if (!query.data?.synced || query.isError) return;
-    if (currentLine < 0) return;
-    const active = viewport.current?.querySelector<HTMLElement>(`[data-lyric-index="${currentLine}"]`);
-    if (active) {
-      const view = viewport.current;
-      if (view) {
-        const viewRect = view.getBoundingClientRect();
-        const activeRect = active.getBoundingClientRect();
-        const relativeTop = activeRect.top - viewRect.top + view.scrollTop;
-        if (activeRect.top < viewRect.top + 70 || activeRect.bottom > viewRect.bottom - 90) {
-          view.scrollTo({ top: Math.max(0, relativeTop - view.clientHeight * .43), behavior: document.documentElement.classList.contains('reduce-motion') ? 'auto' : 'smooth' });
-        }
-      }
-    }
-  }, [lyrics, currentLine, query.data?.synced, query.isError]);
-
-  const loading = query.isLoading || query.isFetching;
-  const error = query.isError;
-  const ready = lyrics.length > 0;
-  return <div className="lyrics-view lyrics-view-full">
-    {loading && <div className="lyric-loading"><i /><i /><i /><span>Finding synced lyrics across Aurora sources</span></div>}
-    {!loading && !ready && <div className="lyrics-empty"><Icon name={error ? 'wifi' : 'lyrics'} /><strong>{error ? 'Lyrics could not be reached' : 'No lyrics found yet'}</strong><span>{error ? 'Check your connection and try again.' : 'Aurora checked its lyric sources. Try again in a moment.'}</span><button className="text-button" onClick={() => void query.refetch()}>Try again</button></div>}
-    {ready && <>
-      <details className="lyric-settings"><summary>Lyrics settings</summary><div className="lyrics-provider">{query.data?.synced ? 'Synced lyrics' : 'Lyrics'}{query.data?.provider && <span> · {query.data.provider}</span>}</div>
-      {query.data?.synced && <div className="lyric-timing"><span>Lyric timing</span><button disabled={timing.id !== track?.id} aria-label="Show lyrics 250 milliseconds earlier" onClick={() => adjustOffset(offset - 250)}>−</button><output>{offset > 0 ? '+' : ''}{offset} ms</output><button disabled={timing.id !== track?.id} aria-label="Show lyrics 250 milliseconds later" onClick={() => adjustOffset(offset + 250)}>+</button><button className="lyric-timing-reset" disabled={timing.id !== track?.id} onClick={() => adjustOffset(0)}>Reset</button></div>}
-      </details>
-      {timingError && <small className="danger" role="status">{timingError}</small>}
-      <div className="lyric-lines" ref={viewport} data-synced={query.data?.synced ? 'true' : 'false'}>
-        {lyrics.map((line, index) => <button type="button" data-lyric-index={index} key={`${line.time ?? 'plain'}-${index}`} className={`lyric-line ${index === currentLine && line.time !== undefined ? 'is-current' : ''} ${line.time === undefined ? 'is-plain' : ''}`} onClick={() => { if (line.time !== undefined) { seek(line.time + offset / 1000); broadcastSeek(); } }} aria-current={index === currentLine ? 'true' : undefined}><span>{line.text}</span>{romanized && line.romanized && <small className="romanized-lyric">{line.romanized}</small>}</button>)}
-      </div>
-    </>}
   </div>;
 }
 

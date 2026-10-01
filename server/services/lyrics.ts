@@ -1,5 +1,5 @@
 import type { MusicProvider } from './youtube.js';
-import { createRomanizer } from 'lyric-romanizer';
+import { romanizeLyrics, type LyricLanguage } from './romanization.js';
 import { TaskQueue } from './taskQueue.js';
 
 export interface LyricsTrackInfo {
@@ -8,6 +8,8 @@ export interface LyricsTrackInfo {
   artist: string;
   album?: string;
   duration?: number;
+  source?: string;
+  language?: LyricLanguage;
 }
 
 export interface TimedLyric {
@@ -20,6 +22,7 @@ export interface LyricsResult {
   lines: TimedLyric[];
   provider: string;
   synced: boolean;
+  approximate?: boolean;
 }
 
 interface Candidate extends LyricsResult { priority: number }
@@ -28,7 +31,7 @@ const CACHE_MS = 15 * 60_000;
 const lyricsCache = new Map<string, { result: LyricsResult; until: number }>();
 const lyricsInFlight = new Map<string, Promise<LyricsResult | undefined>>();
 const lyricsQueue = new TaskQueue(1);
-const romanizer = createRomanizer();
+
 const YOU_LY_PLUS = [
   'https://lyricsplus.prjktla.my.id',
   'https://lyricsplus.atomix.one',
@@ -238,7 +241,7 @@ async function lrclib(info: LyricsTrackInfo): Promise<Candidate | undefined> {
 }
 
 export async function fetchLyrics(music: MusicProvider, info: LyricsTrackInfo): Promise<LyricsResult | undefined> {
-  const key = info.id;
+  const key = JSON.stringify([info.id, info.title, info.artist, info.duration, info.source, info.language]);
   const cached = lyricsCache.get(key);
   if (cached && cached.until > Date.now()) return cached.result;
   const existing = lyricsInFlight.get(key);
@@ -250,27 +253,19 @@ export async function fetchLyrics(music: MusicProvider, info: LyricsTrackInfo): 
 
 async function fetchLyricsUncached(music: MusicProvider, info: LyricsTrackInfo): Promise<LyricsResult | undefined> {
 
-  const tasks: Array<Promise<Candidate | undefined>> = [
-    youLyPlus(info), paxsenix(info), unison(info), betterLyrics(info), simpMusic(info), lrclib(info),
-    Promise.race([
-      music.getLyrics(info.id).then((value) => candidate('YouTube Music', record(value).description ?? value, 6)),
-      new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 9_000)),
-    ]),
-  ];
+  const sources: Record<string, () => Promise<Candidate | undefined>> = {
+    YouLyPlus: () => youLyPlus(info), Paxsenix: () => paxsenix(info), Unison: () => unison(info), BetterLyrics: () => betterLyrics(info), SimpMusic: () => simpMusic(info), LRCLIB: () => lrclib(info),
+    'YouTube Music': () => Promise.race([music.getLyrics(info.id).then((value) => candidate('YouTube Music', record(value).description ?? value, 6)), new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 9000))]),
+  };
+  const tasks = info.source && info.source !== 'auto' ? [sources[info.source]!()] : Object.values(sources).map((load) => load());
   const settled = await Promise.allSettled(tasks);
   const found = settled.flatMap((result) => result.status === 'fulfilled' && result.value ? [result.value] : []).sort((a, b) => a.priority - b.priority);
   const winner = found.find((item) => item.synced) ?? found[0];
   if (!winner) return undefined;
-  const lines: TimedLyric[] = [];
-  for (const line of winner.lines.slice(0, 1000)) {
-    try {
-      const romanized = await romanizer.romanizeLine(line.text);
-      lines.push(romanized && romanized !== line.text ? { ...line, romanized } : line);
-    } catch { lines.push(line); }
-  }
-  const result: LyricsResult = { lines, provider: winner.provider, synced: winner.synced };
+  const { lines, approximate } = await romanizeLyrics(winner.lines, info.language);
+  const result: LyricsResult = { lines, provider: winner.provider, synced: winner.synced, approximate };
   for (const [key, entry] of lyricsCache) if (entry.until <= Date.now()) lyricsCache.delete(key);
-  lyricsCache.set(info.id, { result, until: Date.now() + CACHE_MS });
+  lyricsCache.set(JSON.stringify([info.id, info.title, info.artist, info.duration, info.source, info.language]), { result, until: Date.now() + CACHE_MS });
   if (lyricsCache.size > 50) {
     const oldest = lyricsCache.keys().next().value;
     if (oldest) lyricsCache.delete(oldest);

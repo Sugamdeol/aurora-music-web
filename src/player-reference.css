@@ -146,3 +146,16 @@
 @media(max-height:600px) and (min-width:761px) {
   .focus-player .full-player-body { padding-top: 10px; padding-bottom: 25px; }
 }
+.reference-player .lyric-source-settings { position: relative; z-index: 2; }
+.reference-player .lyric-source-settings[open] { flex-shrink: 0; max-height: 50svh; overflow-y: auto; padding: 14px; border: 1px solid rgba(255,255,255,.16); border-radius: 12px; background: rgba(15,20,25,.95); }
+.reference-player .lyric-settings-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+.reference-player .lyric-source-settings label { display: grid; gap: 7px; font-size: 12px; color: #eee; }
+.reference-player .lyric-source-settings :is(select,textarea) { width: 100%; min-width: 0; border: 1px solid rgba(255,255,255,.25); border-radius: 7px; padding: 9px; background: #202830; color: #fff; font: inherit; }
+.reference-player .lyric-source-settings p { font-size: 12px; line-height: 1.5; color: rgba(255,255,255,.7); }
+.reference-player .custom-lyric-editor { margin: 12px 0; font-size: 12px; }
+.reference-player .custom-lyric-editor>summary { cursor: pointer; padding: 8px 0; }
+.reference-player .custom-lyric-editor label { margin-bottom: 12px; }
+.reference-player .custom-lyric-editor textarea { resize: vertical; }
+.reference-player .lyric-settings-message { font-size: 12px; color: #fff; }
+.focus-player .lyric-source-settings { display: block; }
+@media(max-width:760px) { .reference-player .lyric-settings-fields { grid-template-columns: 1fr; } }

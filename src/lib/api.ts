@@ -225,9 +225,15 @@ export const api = {
       .filter((item): item is MediaTrack => 'source' in item);
   },
 
-  async lyrics(track: MediaTrack, signal?: AbortSignal): Promise<{ lines: LyricLine[]; provider: string; synced: boolean }> {
+  async romanizeLyrics(lines: LyricLine[], language: string): Promise<{ lines: LyricLine[]; approximate: boolean }> {
+    const body = asRecord(await requestJson(['/api/v1/lyrics/romanize', '/api/lyrics/romanize'], { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lines, language }) }));
+    return { lines: asArray(body.lines).map((row) => { const line = asRecord(row); return { text: asString(line.text), time: typeof line.time === 'number' ? line.time : undefined, romanized: typeof line.romanized === 'string' ? line.romanized : undefined }; }), approximate: Boolean(body.approximate) };
+  },
+
+  async lyrics(track: MediaTrack, signal?: AbortSignal, options?: { source: string; language: string }): Promise<{ lines: LyricLine[]; provider: string; synced: boolean; approximate?: boolean }> {
     const safeId = encodeURIComponent(track.id);
     const params = new URLSearchParams({ title: track.title, artist: track.artist });
+    if (options) { params.set('source', options.source); params.set('language', options.language); }
     if (track.album) params.set('album', track.album);
     if (track.durationSeconds) params.set('duration', String(Math.round(track.durationSeconds)));
     const body = asRecord(await requestJson([`/api/v1/lyrics/${safeId}?${params}`, `/api/lyrics/${safeId}?${params}`], { signal }));
@@ -238,7 +244,7 @@ export const api = {
         const rawTime = Number(item.time ?? item.startTime ?? item.start_time);
         return { time: Number.isFinite(rawTime) ? (rawTime > 1_000 ? rawTime / 1_000 : rawTime) : undefined, text: asString(item.text ?? item.line), romanized: asString(item.romanized) || undefined };
       }).filter((line) => line.text.trim());
-      return { lines, provider: asString(body.provider), synced: Boolean(body.synced ?? lines.some((line) => line.time !== undefined)) };
+      return { lines, provider: asString(body.provider), synced: Boolean(body.synced ?? lines.some((line) => line.time !== undefined)), approximate: Boolean(body.approximate) };
     }
     const lines = asString(body.lyrics).split(/\r?\n/).map((text) => ({ text: text.trim() })).filter((line) => line.text);
     return { lines, provider: asString(body.provider), synced: false };

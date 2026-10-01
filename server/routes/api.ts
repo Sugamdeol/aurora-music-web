@@ -11,6 +11,7 @@ import {
   normalizeSuggestions,
 } from '../normalizers.js';
 import { isAllowedMediaUrl, type AudioExtractor, type AudioQuality } from '../services/ytdlp.js';
+import { romanizeLyrics, LYRIC_LANGUAGES } from '../services/romanization.js';
 import { fetchLyrics } from '../services/lyrics.js';
 import { generateMusicIdea } from '../services/ai.js';
 import { rerankMusicCandidates } from '../services/typesafe.js';
@@ -392,15 +393,23 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
       const value = typeof req.query[key] === 'string' ? (req.query[key] as string).trim() : '';
       return value.slice(0, maximum);
     };
+    const options = parseWith(z.object({ source: z.enum(['auto', 'YouLyPlus', 'Paxsenix', 'Unison', 'BetterLyrics', 'SimpMusic', 'LRCLIB', 'YouTube Music']).default('auto'), language: z.enum(LYRIC_LANGUAGES).default('auto') }), req.query);
     const durationValue = Number(req.query.duration);
     const result = await fetchLyrics(music, {
       id,
+      source: options.source, language: options.language,
       title: queryText('title', 200),
       artist: queryText('artist', 200),
       album: queryText('album', 200),
       duration: Number.isFinite(durationValue) && durationValue > 0 ? Math.min(86_400, durationValue) : undefined,
     });
     res.set('Cache-Control', 'private, max-age=900').json(result ?? { lines: [], provider: '', synced: false });
+  }));
+
+  router.post('/lyrics/romanize', limiter(15, 15 * 60_000), asyncHandler(async (req, res) => {
+    const input = parseWith(z.object({ lines: z.array(z.object({ text: z.string().max(1000), time: z.number().min(0).max(86400).optional() })).max(500), language: z.enum(LYRIC_LANGUAGES).default('auto') }), req.body);
+    const result = await romanizeLyrics(input.lines, input.language);
+    res.set('Cache-Control', 'no-store').json(result);
   }));
 
   const requestedQuality = (value: unknown): AudioQuality =>
