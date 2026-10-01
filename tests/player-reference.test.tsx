@@ -38,3 +38,17 @@ it('keeps the reference player controls and nested queue connected to the shared
   fireEvent.keyDown(window, { key: 'Escape' });
   expect(usePlaybackStore.getState().fullPlayerOpen).toBe(false);
 });
+
+it('keeps lyrics and artwork in fullscreen Focus mode with only basic controls', async () => {
+  render(<QueryClientProvider client={client}><MemoryRouter><PlayerOverlays /></MemoryRouter></QueryClientProvider>);
+  const player = screen.getByRole('dialog', { name: 'Now playing Test song' });
+  await within(player).findByRole('button', { name: 'Next line' });
+  fireEvent.click(within(player).getByRole('button', { name: /^Focus$/ }));
+  expect(player).toHaveClass('focus-player');
+  expect(within(player).getByRole('region', { name: 'Synced lyrics' })).toBeInTheDocument();
+  expect(player.querySelector('.full-artwork')).toBeInTheDocument();
+  expect(within(player).queryByText('Options')).not.toBeInTheDocument();
+  expect(within(player).getByRole('slider', { name: 'Track progress' })).toBeInTheDocument();
+  fireEvent.click(within(player).getByRole('button', { name: /^Exit Focus$/ }));
+  expect(player).not.toHaveClass('focus-player');
+});

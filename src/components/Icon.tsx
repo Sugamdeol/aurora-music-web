@@ -3,11 +3,12 @@ import type { SVGProps } from 'react';
 export type IconName =
   | 'home' | 'search' | 'library' | 'users' | 'settings' | 'chart' | 'heart' | 'plus'
   | 'play' | 'pause' | 'stop' | 'next' | 'previous' | 'backward' | 'forward' | 'shuffle' | 'repeat' | 'repeat-one'
-  | 'queue' | 'lyrics' | 'volume' | 'mute' | 'chevron-down' | 'chevron-right'
+  | 'fullscreen' | 'queue' | 'lyrics' | 'volume' | 'mute' | 'chevron-down' | 'chevron-right'
   | 'arrow-left' | 'more' | 'music' | 'disc' | 'clock' | 'folder' | 'upload'
   | 'trash' | 'download' | 'check' | 'x' | 'sparkles' | 'wifi' | 'copy' | 'drag' | 'sun' | 'moon' | 'sliders' | 'share' | 'radio' | 'spatial';
 
 const paths: Record<IconName, React.ReactNode> = {
+  fullscreen: <path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" />,
   sliders: <><path d="M5 3v9m0 4v5M12 3v3m0 4v11M19 3v12m0 4v2M2 12h6m1-6h6m1 9h6" /></>,
   share: <><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 10.5 6.8-4m-6.8 7 6.8 4" /></>,
   radio: <><rect x="3" y="8" width="18" height="13" rx="3" /><path d="m5 8 13-5M6 12h6m-6 4h3" /><circle cx="16" cy="15" r="2" /></>,

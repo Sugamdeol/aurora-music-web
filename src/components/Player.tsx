@@ -325,13 +325,14 @@ function FullPlayer() {
   const status = usePlaybackStore((state) => state.status);
   const error = usePlaybackStore((state) => state.error);
   const activeSheet = usePlaybackStore((state) => state.activeSheet);
-  const close = () => usePlaybackStore.getState().openFullPlayer(false);
+  const close = () => { if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined); usePlaybackStore.getState().openFullPlayer(false); };
   const openSheet = usePlaybackStore((state) => state.openSheet);
   const liked = useLibraryStore((state) => track ? state.likedIds.has(track.id) : false);
   const toggleLike = useLibraryStore((state) => state.toggleLike);
   const volume = usePlaybackStore((state) => state.volume);
   const setVolume = usePlaybackStore((state) => state.setVolume);
   const [lyricsVisible, setLyricsVisible] = useState(true);
+  const [focusMode, setFocusMode] = useState(false);
   const [romanizedLyrics, setRomanizedLyrics] = useState(true);
   const queue = usePlaybackStore((state) => state.queue);
   const currentIndex = usePlaybackStore((state) => state.currentIndex);
@@ -402,17 +403,17 @@ function FullPlayer() {
       if (sheet) { sheet.style.transform = ''; sheet.style.opacity = ''; }
     },
   };
-  return <div className="full-player reference-player" ref={dialogRef} role="dialog" aria-modal="true" aria-label={`Now playing ${track.title}`} tabIndex={-1}>
+  return <div className={`full-player reference-player ${focusMode ? 'focus-player' : ''}`} ref={dialogRef} role="dialog" aria-modal="true" aria-label={`Now playing ${track.title}`} tabIndex={-1}>
     <div className="player-ambient" style={track.artwork ? { backgroundImage: `url("${track.artwork.replace(/"/g, '%22')}")` } : undefined} />
-    <header className="full-player-top" {...swipeDown}><IconButton icon="x" label="Close full player" onClick={close} /><span>Playing from <strong>{context}</strong></span><div className="full-player-top-actions"><IconButton icon="lyrics" label={lyricsVisible ? 'Hide lyrics' : 'Show lyrics'} active={lyricsVisible} onClick={() => { const next = !lyricsVisible; setLyricsVisible(next); void setSetting('player.lyrics.enabled', next); }} /><IconButton icon="queue" label="Open queue" onClick={() => openSheet('queue')} /></div></header>
-    <div className={`full-player-body ${lyricsVisible ? '' : 'lyrics-hidden'}`}>
+    <header className="full-player-top" {...swipeDown}><IconButton icon="x" label="Close full player" onClick={close} /><span>Playing from <strong>{context}</strong></span><div className="full-player-top-actions"><button className="player-focus-toggle" aria-pressed={focusMode} onClick={() => setFocusMode(!focusMode)}><Icon name="disc" size={16} /><span>{focusMode ? 'Exit Focus' : 'Focus'}</span></button><IconButton icon="fullscreen" label="Enter screen fullscreen" onClick={() => { setFocusMode(true); void dialogRef.current?.requestFullscreen?.().catch(() => undefined); }} />{!focusMode && <><IconButton icon="lyrics" label={lyricsVisible ? 'Hide lyrics' : 'Show lyrics'} active={lyricsVisible} onClick={() => { const next = !lyricsVisible; setLyricsVisible(next); void setSetting('player.lyrics.enabled', next); }} /><IconButton icon="queue" label="Open queue" onClick={() => openSheet('queue')} /></>}</div></header>
+    <div className={`full-player-body ${lyricsVisible || focusMode ? '' : 'lyrics-hidden'}`}>
       <section className="full-player-media" aria-label="Playback controls">
         <div className="full-artwork-wrap" ref={artworkWrapRef}><Artwork className="full-artwork" src={track.artwork} title={track.title} loading="eager" sizes="(max-width: 760px) 80vw, 440px" /></div>
         <div className="full-track-copy"><div><h1><Marquee text={track.title} /></h1><p>{track.artist}{track.album ? <span>{track.album}</span> : null}</p></div><IconButton icon="heart" label={liked ? 'Unlike track' : 'Like track'} active={liked} onClick={() => void toggleLike(track)} /></div>
         <Progress />
         <PlaybackControls large />
         <label className="reference-volume"><Icon name="volume" size={15} /><input type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => setVolume(Number(event.target.value))} aria-label="Volume" style={{ '--volume': `${volume * 100}%` } as React.CSSProperties} /></label>
-        <details className="player-options"><summary aria-label="More player options"><Icon name="more" size={18} /><span>Options</span></summary><div className="player-options-content">
+        {!focusMode && <details className="player-options"><summary aria-label="More player options"><Icon name="more" size={18} /><span>Options</span></summary><div className="player-options-content">
         <div className="player-tools"><PlaybackSpeed /><div className="seek-buttons"><button onClick={() => { const player = usePlaybackStore.getState(); player.seek(player.position - 10); broadcastSeek(); }} aria-label="Rewind ten seconds">−10s</button><button onClick={() => { const player = usePlaybackStore.getState(); player.seek(player.position + 10); broadcastSeek(); }} aria-label="Forward ten seconds">+10s</button></div></div>
         <div className="full-player-actions">
           <button onClick={() => openSheet('queue')}><Icon name="queue" /><span>Queue</span></button>
@@ -422,12 +423,12 @@ function FullPlayer() {
         <TrackActions track={track} />
         {nextTrack && <button className="next-track-card" onClick={() => openSheet('queue')}><Artwork src={nextTrack.artwork} title={nextTrack.title} /><span><small>{nextTrack.recommended ? 'Suggested next' : 'Up next'}</small><strong>{nextTrack.title}</strong><span>{nextTrack.artist}</span></span><Icon name="queue" /></button>}
         <p className="player-keyboard-hint">Space to play · ← / → seek 10s · Shift + arrows change song · M to mute</p>
-        </div></details>
+        </div></details>}
         {status === 'error' && <div className="player-error" role="alert">{error}<button onClick={() => usePlaybackStore.getState().retrySource()}>Retry</button></div>}
       </section>
-      {lyricsVisible && <section className="full-player-lyrics" aria-label="Synced lyrics"><header><div><span>LIVE LYRICS</span><h2>Sing along</h2><p>{track.artist}</p></div><button className={`romanization-toggle ${romanizedLyrics ? 'is-active' : ''}`} aria-pressed={romanizedLyrics} onClick={() => { const next = !romanizedLyrics; setRomanizedLyrics(next); void setSetting('player.lyrics.romanized', next); }}><Icon name="lyrics" size={15} /><span>{romanizedLyrics ? 'Romanized on' : 'Romanize'}</span></button></header><TrackLyrics romanized={romanizedLyrics} /></section>}
+      {(lyricsVisible || focusMode) && <section className="full-player-lyrics" aria-label="Synced lyrics"><header><div><span>LIVE LYRICS</span><h2>Sing along</h2><p>{track.artist}</p></div><button className={`romanization-toggle ${romanizedLyrics ? 'is-active' : ''}`} aria-pressed={romanizedLyrics} onClick={() => { const next = !romanizedLyrics; setRomanizedLyrics(next); void setSetting('player.lyrics.romanized', next); }}><Icon name="lyrics" size={15} /><span>{romanizedLyrics ? 'Romanized on' : 'Romanize'}</span></button></header><TrackLyrics romanized={romanizedLyrics} /></section>}
     </div>
-    <IconButton icon="queue" label="Open playback queue" className="reference-queue" onClick={() => openSheet('queue')} />
+    {!focusMode && <IconButton icon="queue" label="Open playback queue" className="reference-queue" onClick={() => openSheet('queue')} />}
   </div>;
 }
 

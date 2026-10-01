@@ -114,3 +114,35 @@
   .reference-player .full-player-actions>button span { display: inline; }
 }
 @media(prefers-reduced-motion:reduce) { .reference-player .lyric-line { transition: none; } }
+
+/* Focus: a quiet listening stage, with artwork given room to breathe. */
+.player-focus-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border: 1px solid rgba(255,255,255,.2); border-radius: 30px; background: transparent; color: rgba(255,255,255,.8); font: 500 12px 'DM Sans Variable',sans-serif; cursor: pointer; }
+.player-focus-toggle:hover,.player-focus-toggle[aria-pressed="true"] { background: rgba(255,255,255,.12); color: #fff; }
+.full-player.focus-player { background: #101519; }
+:root .focus-player .player-ambient { filter: blur(90px) saturate(1.25) brightness(.5); }
+.focus-player .full-player-top>span { letter-spacing: .12em; text-transform: uppercase; font-size: 9px; }
+.focus-player .full-player-body { width: min(100%,1400px); grid-template-columns: minmax(280px,460px) minmax(0,600px); gap: clamp(45px,7vw,110px); padding: 25px 65px 55px; }
+.focus-player .full-player-media { width: min(100%,max(230px,calc(100svh - 330px))); }
+.focus-player .full-artwork-wrap .full-artwork { border-radius: 12px; box-shadow: 0 35px 90px rgba(0,0,0,.4),0 0 0 1px rgba(255,255,255,.13); }
+.focus-player .full-track-copy h1 { font-size: 23px; font-weight: 600; letter-spacing: -.7px; }
+.focus-player .full-track-copy p { margin-top: 7px; font-size: 13px; }
+.focus-player .full-track-copy p>span,.focus-player .full-track-copy>.icon-button { display: none; }
+.focus-player .buffer-status { display: none; }
+.focus-player .playback-controls-large { margin: 16px 0; gap: 20px; }
+.focus-player .main-play-large { width: 58px; height: 58px; border: 1px solid rgba(255,255,255,.26); border-radius: 50%; background: rgba(255,255,255,.09); }
+.focus-player .reference-volume { width: 75%; justify-self: center; opacity: .7; }
+.focus-player .full-player-lyrics>header,.focus-player .lyric-settings { display: none; }
+.focus-player .full-player-lyrics .lyrics-view-full .lyric-line { font-size: clamp(28px,3vw,42px); letter-spacing: -.9px; }
+@media(max-width:760px) {
+  .focus-player .full-player-body { padding: 24px 28px 48px; width: min(100%,520px); grid-template-columns: 1fr; gap: 30px; }
+  .focus-player .full-player-media { width: 100%; }
+  .focus-player .full-artwork-wrap { width: min(100%,38svh); margin: 0 auto 24px; }
+  .focus-player .full-track-copy h1 { font-size: 23px; }
+  .focus-player .full-player-top>span { display: none; }
+  .focus-player .full-player-top { justify-content: space-between; }
+  .focus-player .full-player-lyrics { height: 55svh; }
+  .focus-player .full-player-lyrics .lyrics-view-full .lyric-line { font-size: 29px; }
+}
+@media(max-height:600px) and (min-width:761px) {
+  .focus-player .full-player-body { padding-top: 10px; padding-bottom: 25px; }
+}
