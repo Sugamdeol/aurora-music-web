@@ -195,7 +195,8 @@ export const api = {
     const safeId = encodeURIComponent(id);
     const body = asRecord(await requestJson([`/api/v1/${kind}/${safeId}`, `/api/${kind}/${safeId}`], { signal }));
     const header = asRecord(body[kind] ?? body.header ?? body.entity);
-    const sections = asArray(body.sections).map(normalizeSection).filter((section): section is MediaSection => section !== null);
+    const albumArtwork = kind === 'album' ? upgradedArtwork(header.artwork ?? header.thumbnail) : '';
+    const sections = asArray(body.sections).map(normalizeSection).filter((section): section is MediaSection => section !== null).map((section) => ({ ...section, items: section.items.map((item) => albumArtwork && !item.artwork ? { ...item, artwork: albumArtwork } : item) }));
     if (kind === 'playlist' && Array.isArray(body.items)) {
       const playlistSection = normalizeSection({ title: 'Track list', items: body.items }, sections.length);
       if (playlistSection) sections.push(playlistSection);
