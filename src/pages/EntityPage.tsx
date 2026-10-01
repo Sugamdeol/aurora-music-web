@@ -124,7 +124,7 @@ export function EntityPage({ forcedKind, local: isLocal = false }: { forcedKind?
       const existing = playlists.find((playlist) => playlist.name === detail.title
         && playlist.tracks.length === primaryTracks.length
         && playlist.tracks.every((track, index) => track.id === primaryTracks[index]?.id));
-      const savedPlaylist = existing ?? await createPlaylistFromTracks(detail.title, primaryTracks);
+      const savedPlaylist = existing ?? await createPlaylistFromTracks(detail.title, primaryTracks, detail.artwork);
       setSavedPlaylistId(savedPlaylist.id);
       setShareMessage(existing ? 'This playlist is already in your library.' : 'Playlist saved to your library.');
     } catch (error) {

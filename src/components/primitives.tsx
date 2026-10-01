@@ -1,15 +1,20 @@
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ImgHTMLAttributes, type PropsWithChildren, type ReactNode } from 'react';
 import { Icon, type IconName } from './Icon';
 
-// i.ytimg.com thumbnails exist in fixed tiers; upgrading for hi-DPI displays
-// is free once we know the pattern.
-export function artworkSrcSet(src?: string): string | undefined {
+// Keep the catalog's real cover URL. Invented YouTube resolution tiers can 404.
+export function artworkSrcSet(_src?: string): string | undefined {
+  return undefined;
+}
+
+function artworkFallback(src?: string): string | undefined {
   if (!src) return undefined;
-  const match = src.match(/^(https:\/\/i\.ytimg\.com\/vi(?:_webp)?\/[^/]+\/)([a-z0-9]+)(\.(?:jpg|webp))?(\?.*)?$/i);
-  if (!match) return undefined;
-  const [, prefix, , suffix = '.jpg', query = ''] = match;
-  const tiers: Array<[string, number]> = [[`${prefix}mqdefault${suffix}${query}`, 320], [`${prefix}hqdefault${suffix}${query}`, 480], [`${prefix}sddefault${suffix}${query}`, 640]];
-  return tiers.map(([url, width]) => `${url} ${width}w`).join(', ');
+  if (/\/maxresdefault\.(jpg|webp)(?:\?|$)/i.test(src)) {
+    return src.replace(/\/maxresdefault\.(jpg|webp)/i, '/hqdefault.$1');
+  }
+  if (/\/sddefault\.(jpg|webp)(?:\?|$)/i.test(src)) {
+    return src.replace(/\/sddefault\.(jpg|webp)/i, '/hqdefault.$1');
+  }
+  return undefined;
 }
 
 /** Long titles that overflow their row scroll slowly instead of truncating. */
@@ -51,7 +56,8 @@ interface ArtworkProps extends Omit<ImgHTMLAttributes<HTMLImageElement>, 'src'> 
 }
 export function Artwork({ src, title = '', rounded = false, className = '', ...props }: ArtworkProps) {
   const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [src]);
+  const [retrySrc, setRetrySrc] = useState<string>();
+  useEffect(() => { setFailed(false); setRetrySrc(undefined); }, [src]);
   const seed = [...title].reduce((value, char) => (value * 31 + char.charCodeAt(0)) >>> 0, 7);
   const palettes = [
     ['#c87954', '#e5c99c', '#303a32'], ['#9cae91', '#d8d1b4', '#38473b'],
@@ -62,7 +68,7 @@ export function Artwork({ src, title = '', rounded = false, className = '', ...p
   const shape = seed % 3;
   return <span className={`artwork ${rounded ? 'artwork-round' : ''} ${className}`}>
     {src && !failed
-      ? <img src={src} srcSet={artworkSrcSet(src)} sizes="(max-width: 760px) 30vw, 220px" alt={props.alt ?? ''} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(true)} {...props} />
+      ? <img src={retrySrc ?? src} srcSet={artworkSrcSet(retrySrc ?? src)} sizes="(max-width: 760px) 30vw, 220px" alt={props.alt ?? ''} loading="lazy" decoding="async" referrerPolicy="no-referrer" {...props} onError={(event) => { const fallback = artworkFallback(src); if (fallback && !retrySrc) setRetrySrc(fallback); else { setFailed(true); props.onError?.(event); } }} />
       : <span className="artwork-fallback" aria-hidden="true">
         <svg viewBox="0 0 120 120" focusable="false">
           <rect width="120" height="120" fill={paper} />

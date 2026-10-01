@@ -17,14 +17,13 @@ const errorMessage = (value: unknown): string => typeof value === 'string' ? val
 const asArray = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 
 function upgradedArtwork(value: unknown): string {
-  const raw = asString(value);
+  const raw = typeof value === 'string' ? value : asString(asRecord(value).url);
   if (!raw) return '';
   try {
     const url = new URL(raw, window.location.origin);
     if (url.hostname.endsWith('googleusercontent.com')) {
       url.pathname = url.pathname.replace(/=(?:w\d+-h\d+|s\d+)[^/]*$/, '=w1200-h1200-l90-rj');
-    } else if (url.hostname.endsWith('ytimg.com')) {
-      url.pathname = url.pathname.replace(/\/(?:default|mqdefault|hqdefault|sddefault)\.(jpg|webp)$/i, '/maxresdefault.$1');
+
     }
     return url.href;
   } catch {

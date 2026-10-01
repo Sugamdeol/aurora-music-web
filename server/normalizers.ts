@@ -43,8 +43,7 @@ export function highResolutionThumbnail(value: unknown): string {
     const url = new URL(raw);
     if (url.hostname === 'googleusercontent.com' || url.hostname.endsWith('.googleusercontent.com')) {
       url.pathname = url.pathname.replace(/=(?:w\d+-h\d+|s\d+)[^/]*$/, '=w1200-h1200-l90-rj');
-    } else if (url.hostname === 'ytimg.com' || url.hostname.endsWith('.ytimg.com')) {
-      url.pathname = url.pathname.replace(/\/(?:default|mqdefault|hqdefault|sddefault)\.(jpg|webp)$/i, '/maxresdefault.$1');
+
     }
     return url.href;
   } catch {
@@ -55,10 +54,10 @@ export function highResolutionThumbnail(value: unknown): string {
 export function bestThumbnail(itemValue: unknown): string {
   const item = record(itemValue);
   const thumbnail = record(item.thumbnail);
-  const rawCandidates = item.thumbnails ?? thumbnail.thumbnails ?? item.thumbnail ?? [];
+  const rawCandidates = item.thumbnails ?? thumbnail.contents ?? thumbnail.thumbnails ?? item.thumbnail ?? [];
   const candidates = Array.isArray(rawCandidates)
     ? rawCandidates
-    : record(rawCandidates).url ? [rawCandidates] : [];
+    : typeof rawCandidates === 'string' || record(rawCandidates).url ? [rawCandidates] : [];
 
   let best: unknown;
   let bestArea = -1;
@@ -115,7 +114,8 @@ export function normalizeItem(itemValue: unknown, fallbackKind = 'song'): MusicI
 }
 
 export function normalizeHeader(headerValue: unknown): MusicHeader {
-  const header = record(headerValue);
+  const outer = record(headerValue);
+  const header = record(outer.header ?? headerValue);
   const artists = array(header.artists ?? header.authors).map(normalizeArtist).filter((artist) => artist.name);
   const author = asText(valueAt(header.author, 'name'));
   return {

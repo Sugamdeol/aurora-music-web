@@ -28,7 +28,7 @@ interface LibraryState {
   recordPlay: (track: MediaTrack) => Promise<number>;
   recordListenTime: (historyId: number, seconds: number) => Promise<void>;
   createPlaylist: (name: string) => Promise<LocalPlaylist>;
-  createPlaylistFromTracks: (name: string, tracks: MediaTrack[]) => Promise<LocalPlaylist>;
+  createPlaylistFromTracks: (name: string, tracks: MediaTrack[], artwork?: string) => Promise<LocalPlaylist>;
   deletePlaylist: (id: string) => Promise<void>;
   addToPlaylist: (playlistId: string, track: MediaTrack) => Promise<void>;
   removeFromPlaylist: (playlistId: string, trackId: string) => Promise<void>;
@@ -124,14 +124,14 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     return playlist;
   },
 
-  createPlaylistFromTracks: async (rawName, tracks) => {
+  createPlaylistFromTracks: async (rawName, tracks, artwork) => {
     const name = rawName.trim().slice(0, 64);
     if (!name) throw new Error('Enter a playlist name.');
     const seen = new Set<string>();
     const unique = tracks.filter((track) => !seen.has(track.id) && Boolean(seen.add(track.id)));
     if (!unique.length) throw new Error('Add a song before saving a playlist.');
     const now = Date.now();
-    const playlist: LocalPlaylist = { id: safeId(), name, createdAt: now, updatedAt: now, artwork: unique[0].artwork, tracks: unique };
+    const playlist: LocalPlaylist = { id: safeId(), name, createdAt: now, updatedAt: now, artwork: artwork || unique[0].artwork, tracks: unique };
     await db.transaction('rw', db.tracks, db.playlists, db.playlistTracks, async () => {
       const existing = await db.tracks.bulkGet(unique.map((track) => track.id));
       await db.tracks.bulkPut(unique.map((track, index) => ({ ...existing[index], ...track })));
