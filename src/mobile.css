@@ -1,0 +1,126 @@
+/* Canonical phone layout. Loaded last to resolve legacy responsive variants. */
+.mobile-more-link { display:flex; align-items:center; gap:14px; min-height:56px; padding:12px; border-radius:12px; text-decoration:none; }
+.mobile-more-link span { flex:1; }
+.mobile-more-link:hover { background:var(--surface-soft); }
+.mobile-more-button { border:0; background:transparent; cursor:pointer; font:inherit; }
+@media (max-width:760px) {
+  :root { --mobile-nav-height:64px; --mobile-bottom:calc(8px + env(safe-area-inset-bottom, 0px)); }
+  html { scroll-padding-bottom:180px; }
+  html,body,#root { width:100%; max-width:100%; }
+  #root { min-width:0; }
+  .aurora-app { width:100%; min-width:0; padding:0 16px calc(172px + env(safe-area-inset-bottom, 0px)); }
+  .aurora-app .main-stage,.aurora-app .route-stage,.aurora-app .page { width:100%; min-width:0; max-width:100%; }
+  .aurora-app .route-stage { padding:8px 0 24px; }
+  .aurora-app .top-bar { gap:4px; height:60px; min-height:60px; margin:0 0 12px; }
+  .aurora-app .top-bar .icon-button { width:44px; height:44px; }
+  .aurora-app .bottom-nav { left:8px; right:8px; bottom:var(--mobile-bottom); height:var(--mobile-nav-height); grid-template-columns:repeat(5,minmax(0,1fr)); padding:4px; border-radius:18px; }
+  .aurora-app .bottom-nav .nav-link { width:100%; min-width:0; min-height:52px; padding:4px 2px; gap:4px; flex-direction:column; justify-content:center; font-size:11px; }
+  .aurora-app .bottom-nav .nav-link svg { width:22px; height:22px; }
+  .aurora-app .player-dock { bottom:calc(var(--mobile-bottom) + var(--mobile-nav-height) + 8px); left:8px; right:8px; width:auto; min-height:68px; border-radius:16px; padding:8px 10px; grid-template-columns:minmax(0,1fr) auto; }
+  .aurora-app .dock-track { min-width:0; }
+  .aurora-app .dock-track-copy { min-width:0; }
+  .aurora-app .player-dock .playback-controls .icon-button { width:44px; height:44px; }
+  .aurora-app .player-dock .playback-controls > .icon-button:first-child { display:none; }
+  .aurora-app .page-header { flex-wrap:wrap; gap:12px; margin-bottom:24px; }
+  .aurora-app .page-header h1 { font-size:28px; line-height:1.15; letter-spacing:-.8px; }
+  .aurora-app .section-header { align-items:center; gap:12px; }
+  .aurora-app .section-header h2 { min-width:0; font-size:19px; line-height:1.3; }
+  .aurora-app .content-section { margin-block:28px; }
+  .aurora-app :is(.tabs,.library-tabs,.search-kinds,.search-scopes) { max-width:100%; overflow-x:auto; flex-wrap:nowrap; }
+  .aurora-app :is(.tabs,.library-tabs,.search-kinds,.search-scopes) > button { flex-shrink:0; min-height:44px; }
+  .aurora-app :is(.horizontal-shelf,.home-discovery-shelf) { max-width:100%; gap:14px; padding-bottom:10px; }
+  .aurora-app .media-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px 14px; }
+  .aurora-app .media-card { min-width:0; }
+  /* Keep scrolling shelves inside the page instead of contributing their
+     full track width to an ancestor's intrinsic size. */
+  .aurora-app :is(.home-discovery,.content-section,.home-feature-grid,.home-listening-grid) { min-width:0; max-width:100%; }
+  .aurora-app .home-discovery { grid-template-columns:minmax(0,1fr); }
+  .aurora-app .horizontal-shelf { width:100%; min-width:0; }
+  .aurora-app .discovery-cards .media-card:not(.media-card-artist) { width:145px; }
+  .aurora-app .discovery-video-cards .media-card:not(.media-card-artist) { width:min(255px,78vw); }
+  .aurora-app .discovery-cards .media-card:not(.media-card-artist) > .artwork { width:100%; height:auto; aspect-ratio:1; }
+  .aurora-app .discovery-video-cards .media-card:not(.media-card-artist) > .artwork { aspect-ratio:16/9; }
+  .aurora-app .discovery-cards .media-card:not(.media-card-artist) .media-card-overlay { top:auto; bottom:60px; }
+  .aurora-app :is(.discovery-play,.discovery-more) { min-height:44px; }
+  .aurora-app .song-row { grid-template-columns:44px minmax(0,1fr) 44px 44px; gap:6px; min-height:64px; padding:6px 0; }
+  .aurora-app .song-row-art { width:44px; height:44px; }
+  .aurora-app .song-row-duration { display:none; }
+  .aurora-app .song-row-copy { min-width:0; }
+  .aurora-app .song-row-copy strong { font-size:14px; }
+  .aurora-app .song-row-copy span { font-size:12px; }
+  .aurora-app .entity-page .song-row.has-position { grid-template-columns:18px 44px minmax(0,1fr) 44px 44px; gap:4px; }
+  .aurora-app .discovery-track-grid .song-row { grid-template-columns:44px minmax(0,1fr) 44px; }
+  .aurora-app .discovery-track-grid .row-menu-wrap > .icon-button { width:44px; height:44px; }
+  .aurora-app .row-menu { max-width:calc(100vw - 32px); max-height:60dvh; overflow-y:auto; background:var(--surface-raised); }
+  .aurora-app .entity-hero { flex-direction:column; align-items:flex-start; gap:20px; padding:20px; min-height:0; }
+  .aurora-app .entity-artwork { width:min(56vw,220px); height:auto; aspect-ratio:1; align-self:center; }
+  .aurora-app .entity-copy { width:100%; min-width:0; }
+  .aurora-app .entity-copy h1 { font-size:clamp(26px,7vw,36px); overflow-wrap:anywhere; }
+  .aurora-app :is(.entity-actions,.playlist-edit-actions) { flex-wrap:wrap; gap:8px; }
+  .aurora-app .entity-description { max-width:100%; }
+  .aurora-app :is(.library-highlights,.stats-grid,.room-columns) { grid-template-columns:1fr; }
+  .aurora-app .setting-block { flex-wrap:wrap; gap:10px; padding:14px; }
+  .aurora-app .setting-block > div { min-width:0; flex-basis:calc(100% - 60px); }
+  .aurora-app .setting-block > :is(.mode-options,.accent-choices) { flex-basis:100%; flex-wrap:wrap; }
+  .aurora-app .setting-block select { max-width:100%; min-height:44px; }
+  .aurora-app .home-daily-mix { grid-template-columns:1fr; min-height:0; gap:18px; padding:24px; }
+  .aurora-app .home-mix-art { max-width:180px; justify-self:center; transform:none; }
+  .aurora-app .home-mix-actions { flex-wrap:wrap; }
+  .aurora-app .home-resume { flex-wrap:wrap; }
+  .aurora-app :is(.room-code,.room-now,.room-error,.join-requests > div) { flex-wrap:wrap; }
+  .aurora-app :is(.room-chat p,.room-error span,.entity-description) { overflow-wrap:anywhere; }
+  .aurora-app :is(input,select,textarea) { font-size:16px; }
+  .aurora-app textarea { resize:none; }
+  .aurora-app .sheet-panel { max-height:calc(100dvh - 24px); padding-bottom:calc(24px + env(safe-area-inset-bottom)); overflow-y:auto; }
+  .aurora-app .mobile-navigation-sheet .sheet-panel { height:auto; }
+
+  /* Android GPUs can corrupt large blur surfaces, masks and transformed artwork.
+     Use the already downsampled artwork tint without a live filter on phones. */
+  :root .aurora-app .song-ambient { display:none; }
+  :root .aurora-app :is(.glass-surface,.player-dock,.bottom-nav,.sheet-backdrop,.search-suggestions,.search-scopes,.search-field,.settings-group > div,.full-player-top,.full-player-lyrics,.row-menu,.secondary-button,.search-shortcut,.history-visit,.history-summary,.playlist-editor,.chart-card,.room-hero,.room-card,.room-columns > section,.join-requests,.browse-category,.profile-card,.modal-scrim,.choice-scrim,.toast) { backdrop-filter:none; -webkit-backdrop-filter:none; }
+  :root .aurora-app :is(.player-dock,.bottom-nav,.sheet-panel,.search-suggestions) { background:var(--surface-raised); }
+  :root .full-player.reference-player { height:100dvh; overflow-x:hidden; overflow-y:auto; animation:none; padding:0 0 env(safe-area-inset-bottom); background:#17222b; }
+  :root .reference-player * { backdrop-filter:none; -webkit-backdrop-filter:none; }
+  :root .reference-player .player-ambient { position:fixed; inset:0; display:block; filter:none; transform:none; background-image:linear-gradient(160deg,rgba(14,22,31,.45),rgba(15,17,24,.82)),var(--track-tint,linear-gradient(135deg,#344754,#34272e)); background-size:cover; opacity:1; }
+  :root .reference-player .full-player-top { position:relative; height:auto; min-height:60px; display:grid; grid-template-columns:44px minmax(0,1fr) auto; gap:6px; padding:8px 12px; touch-action:pan-x; }
+  :root .reference-player .full-player-top > span { max-width:none; min-width:0; font-size:11px; line-height:1.4; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  :root .reference-player .full-player-top > span strong { display:block; margin:0; overflow:hidden; text-overflow:ellipsis; }
+  :root .reference-player .full-player-top-actions { gap:0; }
+  :root .reference-player .full-player-top-actions > button[aria-label="Enter screen fullscreen"] { display:none; }
+  :root .reference-player .full-player-top-actions > button[aria-label="Open queue"] { display:none; }
+  :root .reference-player .player-focus-toggle { padding:0; width:44px; height:44px; justify-content:center; border:0; }
+  :root .reference-player .player-focus-toggle > span { display:none; }
+  :root .reference-player .full-player-top .icon-button { width:44px; height:44px; }
+  :root .reference-player .full-player-body { display:flex; flex-direction:column; align-items:stretch; width:min(100%,480px); height:auto; min-height:0; gap:28px; padding:12px 24px 32px; }
+  :root .reference-player .full-player-media { width:100%; min-width:0; gap:0; }
+  :root .reference-player .full-artwork-wrap { width:min(100%,42svh,340px); margin:0 auto 22px; transform:none; }
+  :root .reference-player .full-artwork { border-radius:12px; box-shadow:none; }
+  :root .reference-player .full-track-copy { margin:0 0 12px; }
+  :root .reference-player .full-track-copy h1 { font-size:22px; line-height:1.3; }
+  :root .reference-player .full-track-copy p { font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  :root .reference-player .full-track-copy .icon-button { width:44px; height:44px; }
+  :root .reference-player .seek-track input { height:36px; }
+  :root .reference-player .progress-large > span:not(.seek-track) { font-size:12px; }
+  :root .reference-player .buffer-status { font-size:11px; min-height:16px; }
+  :root .reference-player .playback-controls-large { justify-content:space-between; gap:4px; margin:12px 0; }
+  :root .reference-player .playback-controls-large .icon-button { width:44px; height:44px; }
+  :root .reference-player .main-play-large { width:60px; height:60px; margin:0; }
+  :root .reference-player .reference-volume { min-height:44px; width:100%; }
+  :root .reference-player .player-options > summary { min-height:44px; font-size:13px; }
+  :root .reference-player .reference-queue { display:none; }
+  :root .reference-player .full-player-lyrics { width:100%; height:52svh; min-height:280px; margin:0; padding:20px 0 0; border-top:1px solid var(--line); }
+  :root .reference-player .full-player-lyrics > header { min-height:44px; }
+  :root .reference-player .romanization-toggle { min-height:44px; font-size:12px; }
+  :root .reference-player .lyric-settings > summary { min-height:44px; font-size:12px; }
+  :root .reference-player .full-player-lyrics .lyrics-view-full .lyric-lines { mask-image:none; -webkit-mask-image:none; padding:20px 8px 80px 0; gap:22px; }
+  :root .reference-player .full-player-lyrics .lyrics-view-full .lyric-line { font-size:26px; line-height:1.4; overflow-wrap:anywhere; }
+  :root .reference-player .custom-lyric-editor textarea { resize:none; min-height:160px; }
+}
+@media (max-width:360px) {
+  .aurora-app { padding-inline:12px; }
+  :root .reference-player .full-player-body { padding-inline:18px; }
+  :root .reference-player .full-player-top { padding-inline:6px; gap:2px; }
+}
+@media (max-width:760px) and (orientation:landscape) {
+  :root .reference-player .full-artwork-wrap { width:min(100%,48svh,220px); }
+}

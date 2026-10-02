@@ -49,9 +49,23 @@ function NavItem({ to, label, mobileLabel, icon, end }: { to: string; label: str
   return <NavLink to={to} end={end} className={({ isActive }) => `nav-link ${isActive ? 'is-active' : ''}`}><Icon name={icon} /><span className="nav-desktop-label">{label}</span><span className="nav-mobile-label">{mobileLabel ?? label}</span></NavLink>;
 }
 
+function MobileNavigationSheet({ onClose }: { onClose: () => void }) {
+  const ref = useDialog<HTMLDivElement>(true, onClose);
+  const items = [...primaryNav.filter((item) => ['/explore', '/ai', '/room'].includes(item.to)), ...secondaryNav];
+  return <div className="detail-sheet mobile-navigation-sheet" ref={ref} role="dialog" aria-modal="true" aria-label="More navigation" tabIndex={-1}>
+    <button className="sheet-backdrop" onClick={onClose} aria-label="Close navigation" />
+    <div className="sheet-panel glass-surface"><IconButton icon="x" label="Close navigation" className="sheet-close" onClick={onClose} />
+      <div className="sheet-content"><div className="sheet-title"><h2>More from Aurora</h2></div>
+        <nav aria-label="More navigation">{items.map((item) => <NavLink key={item.to} to={item.to} onClick={onClose} className="mobile-more-link"><Icon name={item.icon} /><span>{item.label}</span><Icon name="chevron-right" size={16} /></NavLink>)}</nav>
+      </div>
+    </div>
+  </div>;
+}
+
 export function AppShell() {
   const navigate = useNavigate();
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const playlists = useLibraryStore((state) => state.playlists);
   const appearance = useLibraryStore((state) => state.appearance);
   const currentTrack = usePlaybackStore((state) => state.currentTrack);
@@ -158,8 +172,10 @@ export function AppShell() {
     </main>
 
     <PlayerDock />
-    <nav className="bottom-nav glass-surface" aria-label="Main navigation">{primaryNav.map((item) => <NavItem key={item.to} {...item} />)}</nav>
+    <nav className="bottom-nav glass-surface" aria-label="Main navigation">{primaryNav.filter((item) => ['/', '/search', '/audio-studio', '/library'].includes(item.to)).map((item) => <NavItem key={item.to} {...item} />)}<button className="nav-link mobile-more-button" aria-label="More navigation" aria-expanded={mobileNavigationOpen} onClick={() => setMobileNavigationOpen(true)}><Icon name="more" /><span>More</span></button></nav>
     <PlayerOverlays />
+    {mobileNavigationOpen && <MobileNavigationSheet onClose={() => setMobileNavigationOpen(false)} />}
     {shortcutsOpen && <ShortcutsSheet onClose={() => setShortcutsOpen(false)} />}
   </div>;
 }
+

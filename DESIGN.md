@@ -62,3 +62,8 @@ Primary actions use `--accent`, secondary actions use bordered dark surfaces, an
 - Don't promise AI output when the app is showing catalog-only fallback results.
 - Don't animate the listening field when reduced motion is enabled.
 - Don't hide the main action below multiple stacks of filters or chips on a phone.
+
+
+## Phone layout contract
+
+`src/mobile.css` owns the final phone layout at 760px and below, using the existing runtime tokens. It is loaded after legacy player variants. Phones use five bottom navigation items with remaining destinations in an accessible More sheet. The full player uses a compact header, bounded square artwork, separate controls and lyrics, and safe-area spacing. Phone ambient color comes from the existing downsampled artwork tint without GPU blur, backdrop filters, lyric masks, or artwork FLIP animation. Desktop styling is unchanged.
