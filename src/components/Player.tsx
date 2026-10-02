@@ -285,7 +285,7 @@ function FullPlayer() {
     const origin = dockArtworkOrigin;
     dockArtworkOrigin = undefined;
     const target = artworkWrapRef.current;
-    if (!origin || !target || document.documentElement.classList.contains('reduce-motion')) return;
+    if (!origin || !target || window.matchMedia('(max-width: 760px)').matches || document.documentElement.classList.contains('reduce-motion')) return;
     const rect = target.getBoundingClientRect();
     if (!rect.width) return;
     const dx = origin.left + origin.width / 2 - (rect.left + rect.width / 2);
@@ -304,7 +304,7 @@ function FullPlayer() {
   if (!open || !track) return null;
   const swipeDown = {
     onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
-      if (event.pointerType === 'mouse') return;
+      if (event.pointerType === 'mouse' || (event.target instanceof Element && event.target.closest('button, input, a, summary'))) return;
       swipeDrag.current = { startY: event.clientY, lastDy: 0 };
       event.currentTarget.setPointerCapture(event.pointerId);
     },
@@ -336,7 +336,7 @@ function FullPlayer() {
   };
   return <div className={`full-player reference-player ${focusMode ? 'focus-player' : ''}`} ref={dialogRef} role="dialog" aria-modal="true" aria-label={`Now playing ${track.title}`} tabIndex={-1}>
     <div className="player-ambient" style={track.artwork ? { backgroundImage: `url("${track.artwork.replace(/"/g, '%22')}")` } : undefined} />
-    <header className="full-player-top" {...swipeDown}><IconButton icon="x" label="Close full player" onClick={close} /><span>Playing from <strong>{context}</strong></span><div className="full-player-top-actions"><button className="player-focus-toggle" aria-pressed={focusMode} onClick={() => setFocusMode(!focusMode)}><Icon name="disc" size={16} /><span>{focusMode ? 'Exit Focus' : 'Focus'}</span></button><IconButton icon="fullscreen" label="Enter screen fullscreen" onClick={() => { setFocusMode(true); void dialogRef.current?.requestFullscreen?.().catch(() => undefined); }} />{!focusMode && <><IconButton icon="lyrics" label={lyricsVisible ? 'Hide lyrics' : 'Show lyrics'} active={lyricsVisible} onClick={() => { const next = !lyricsVisible; setLyricsVisible(next); void setSetting('player.lyrics.enabled', next); }} /><IconButton icon="queue" label="Open queue" onClick={() => openSheet('queue')} /></>}</div></header>
+    <header className="full-player-top" {...swipeDown}><IconButton icon="x" label="Close full player" onClick={close} /><span>Playing from <strong>{context}</strong></span><div className="full-player-top-actions"><button className="player-focus-toggle" aria-label={focusMode ? 'Exit Focus' : 'Focus'} aria-pressed={focusMode} onClick={() => setFocusMode(!focusMode)}><Icon name="disc" size={16} /><span>{focusMode ? 'Exit Focus' : 'Focus'}</span></button><IconButton icon="fullscreen" label="Enter screen fullscreen" onClick={() => { setFocusMode(true); void dialogRef.current?.requestFullscreen?.().catch(() => undefined); }} />{!focusMode && <><IconButton icon="lyrics" label={lyricsVisible ? 'Hide lyrics' : 'Show lyrics'} active={lyricsVisible} onClick={() => { const next = !lyricsVisible; setLyricsVisible(next); void setSetting('player.lyrics.enabled', next); }} /><IconButton icon="queue" label="Open queue" onClick={() => openSheet('queue')} /></>}</div></header>
     <div className={`full-player-body ${lyricsVisible || focusMode ? '' : 'lyrics-hidden'}`}>
       <section className="full-player-media" aria-label="Playback controls">
         <div className="full-artwork-wrap" ref={artworkWrapRef}><Artwork className="full-artwork" src={track.artwork} title={track.title} loading="eager" sizes="(max-width: 760px) 80vw, 440px" /></div>
@@ -375,3 +375,4 @@ function DetailSheet() {
 }
 
 export function PlayerOverlays() { return <><FullPlayer /><DetailSheet /></>; }
+

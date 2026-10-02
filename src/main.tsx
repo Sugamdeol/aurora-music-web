@@ -9,6 +9,7 @@ import './android-features.css';
 import './player-polish.css';
 import './smooth-mode.css';
 import './player-reference.css';
+import './mobile.css';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,3 +45,4 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}><App /></QueryClientProvider>
   </React.StrictMode>,
 );
+

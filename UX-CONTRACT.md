@@ -40,3 +40,8 @@ Track credits link to their artist and album pages without changing the play con
 - Native `<select>` owns playlist choice, native `<textarea>` owns the mood prompt, and native checkboxes own preview selection. All retain labels and visible keyboard focus.
 - Route changes do not erase local saved playlists. The player and bottom navigation must not hide the Studio's main action on phone screens.
 - The app does not claim an AI result when it shows catalog fallback. Public page links and sources open in separate tabs without sending saved library data.
+
+
+## Mobile navigation and rendering
+
+AppShell owns the five-item phone navigation and More sheet, which reuses useDialog for focus, Escape and scroll locking. All existing destinations remain reachable. Player header controls do not start swipe-to-dismiss gestures. Player artwork animation is desktop-only; phones use unfiltered downsampled tint. Shared mobile layout rules live in src/mobile.css; content stays above the dock and safe-area navigation.
