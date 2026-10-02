@@ -6,6 +6,8 @@
 @media (max-width:760px) {
   :root { --mobile-nav-height:64px; --mobile-bottom:calc(8px + env(safe-area-inset-bottom, 0px)); }
   html { scroll-padding-bottom:180px; }
+  html,body,#root { width:100%; max-width:100%; }
+  #root { min-width:0; }
   .aurora-app { width:100%; min-width:0; padding:0 16px calc(172px + env(safe-area-inset-bottom, 0px)); }
   .aurora-app .main-stage,.aurora-app .route-stage,.aurora-app .page { width:100%; min-width:0; max-width:100%; }
   .aurora-app .route-stage { padding:8px 0 24px; }
@@ -29,12 +31,26 @@
   .aurora-app :is(.horizontal-shelf,.home-discovery-shelf) { max-width:100%; gap:14px; padding-bottom:10px; }
   .aurora-app .media-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px 14px; }
   .aurora-app .media-card { min-width:0; }
+  /* Keep scrolling shelves inside the page instead of contributing their
+     full track width to an ancestor's intrinsic size. */
+  .aurora-app :is(.home-discovery,.content-section,.home-feature-grid,.home-listening-grid) { min-width:0; max-width:100%; }
+  .aurora-app .home-discovery { grid-template-columns:minmax(0,1fr); }
+  .aurora-app .horizontal-shelf { width:100%; min-width:0; }
+  .aurora-app .discovery-cards .media-card:not(.media-card-artist) { width:145px; }
+  .aurora-app .discovery-video-cards .media-card:not(.media-card-artist) { width:min(255px,78vw); }
+  .aurora-app .discovery-cards .media-card:not(.media-card-artist) > .artwork { width:100%; height:auto; aspect-ratio:1; }
+  .aurora-app .discovery-video-cards .media-card:not(.media-card-artist) > .artwork { aspect-ratio:16/9; }
+  .aurora-app .discovery-cards .media-card:not(.media-card-artist) .media-card-overlay { top:auto; bottom:60px; }
+  .aurora-app :is(.discovery-play,.discovery-more) { min-height:44px; }
   .aurora-app .song-row { grid-template-columns:44px minmax(0,1fr) 44px 44px; gap:6px; min-height:64px; padding:6px 0; }
   .aurora-app .song-row-art { width:44px; height:44px; }
   .aurora-app .song-row-duration { display:none; }
   .aurora-app .song-row-copy { min-width:0; }
   .aurora-app .song-row-copy strong { font-size:14px; }
   .aurora-app .song-row-copy span { font-size:12px; }
+  .aurora-app .entity-page .song-row.has-position { grid-template-columns:18px 44px minmax(0,1fr) 44px 44px; gap:4px; }
+  .aurora-app .discovery-track-grid .song-row { grid-template-columns:44px minmax(0,1fr) 44px; }
+  .aurora-app .discovery-track-grid .row-menu-wrap > .icon-button { width:44px; height:44px; }
   .aurora-app .row-menu { max-width:calc(100vw - 32px); max-height:60dvh; overflow-y:auto; background:var(--surface-raised); }
   .aurora-app .entity-hero { flex-direction:column; align-items:flex-start; gap:20px; padding:20px; min-height:0; }
   .aurora-app .entity-artwork { width:min(56vw,220px); height:auto; aspect-ratio:1; align-self:center; }
@@ -45,11 +61,14 @@
   .aurora-app :is(.library-highlights,.stats-grid,.room-columns) { grid-template-columns:1fr; }
   .aurora-app .setting-block { flex-wrap:wrap; gap:10px; padding:14px; }
   .aurora-app .setting-block > div { min-width:0; flex-basis:calc(100% - 60px); }
+  .aurora-app .setting-block > :is(.mode-options,.accent-choices) { flex-basis:100%; flex-wrap:wrap; }
   .aurora-app .setting-block select { max-width:100%; min-height:44px; }
   .aurora-app .home-daily-mix { grid-template-columns:1fr; min-height:0; gap:18px; padding:24px; }
   .aurora-app .home-mix-art { max-width:180px; justify-self:center; transform:none; }
   .aurora-app .home-mix-actions { flex-wrap:wrap; }
   .aurora-app .home-resume { flex-wrap:wrap; }
+  .aurora-app :is(.room-code,.room-now,.room-error,.join-requests > div) { flex-wrap:wrap; }
+  .aurora-app :is(.room-chat p,.room-error span,.entity-description) { overflow-wrap:anywhere; }
   .aurora-app :is(input,select,textarea) { font-size:16px; }
   .aurora-app textarea { resize:none; }
   .aurora-app .sheet-panel { max-height:calc(100dvh - 24px); padding-bottom:calc(24px + env(safe-area-inset-bottom)); overflow-y:auto; }
