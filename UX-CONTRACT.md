@@ -45,3 +45,8 @@ Track credits link to their artist and album pages without changing the play con
 ## Mobile navigation and rendering
 
 AppShell owns the five-item phone navigation and More sheet, which reuses useDialog for focus, Escape and scroll locking. All existing destinations remain reachable. Player header controls do not start swipe-to-dismiss gestures. Player artwork animation is desktop-only; phones use unfiltered downsampled tint. Shared mobile layout rules live in src/mobile.css; content stays above the dock and safe-area navigation.
+
+
+## Personal recommendations
+
+Home uses local favourites and up to 500 listening records with a 21-day recency decay. Listen time is stronger evidence than starting a song. The shared ranking removes duplicate recordings and diversifies artists. Autoplay uses the in-memory library so queue extension does not wait on database reads. A manual next after 2–30 seconds of active playback lowers that song; automatic transitions and source-loading failures do not. Song options provide a reversible “Don’t suggest this song” choice. Feedback stays in browser storage and is limited to 500 hidden IDs and 500 skip counters. Saved songs remain playable and can be allowed again from their menu. This is a content-based ranker; it does not claim collaborative filtering, inferred genres, or performance better than another service.

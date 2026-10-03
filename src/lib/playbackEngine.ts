@@ -1,3 +1,5 @@
+import { buildTasteProfile, rankRecommendations } from './recommendations';
+import { useRecommendationStore } from '../store/recommendations';
 import type { MediaTrack } from '../domain/media';
 import { formatDuration } from '../domain/media';
 import { db } from './db';
@@ -536,9 +538,13 @@ export class PlaybackEngine {
     this.recommendationAttemptKey = key;
     const promise = (async () => {
       const seen = new Set(state.queue.map((track) => track.id));
+      const library = useLibraryStore.getState();
+      // Use the already loaded library so extending the queue never waits on IndexedDB.
+      const profile = buildTasteProfile(library.likedTracks, library.recent.map((track) => ({ trackId: track.id, artist: track.artist, playedAt: track.lastPlayedAt ?? 0 })));
+      const rank = (tracks: MediaTrack[]) => rankRecommendations(tracks, profile, useRecommendationStore.getState(), { exclude: state.queue, limit: 20 });
       for (const seed of [tail, state.queue.at(-2)].filter((track): track is MediaTrack => Boolean(track && track.source === 'remote'))) {
         try {
-          const related = (await api.related(seed.id)).filter((track) => track.source === 'remote' && !seen.has(track.id));
+          const related = rank(await api.related(seed.id));
           if (related.length) {
             usePlaybackStore.getState().appendRecommendations(related, tail.id);
             return;
@@ -547,7 +553,7 @@ export class PlaybackEngine {
       }
       try {
         const results = await api.search(`${tail.artist} songs`, 'song');
-        usePlaybackStore.getState().appendRecommendations(results.filter((item): item is MediaTrack => 'source' in item && !seen.has(item.id)), tail.id);
+        usePlaybackStore.getState().appendRecommendations(rank(results.filter((item): item is MediaTrack => 'source' in item && !seen.has(item.id))), tail.id);
       } catch { /* No online suggestions available; end this queue normally. */ }
     })();
     this.recommendationRequest = { key, promise };
@@ -774,3 +780,4 @@ export class PlaybackEngine {
 }
 
 export const playbackEngine = new PlaybackEngine();
+

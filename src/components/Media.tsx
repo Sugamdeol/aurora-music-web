@@ -7,6 +7,7 @@ import { usePlaybackStore } from '../store/playback';
 import { Artwork, IconButton } from './primitives';
 import { Icon } from './Icon';
 import { TrackActions } from './TrackActions';
+import { useRecommendationStore } from '../store/recommendations';
 
 interface SongRowProps {
   track: MediaTrack;
@@ -28,6 +29,7 @@ export function SongRow({ track, context = [track], contextLabel = 'Queue', inde
   const addToPlaylist = useLibraryStore((state) => state.addToPlaylist);
   const removeFromPlaylist = useLibraryStore((state) => state.removeFromPlaylist);
   const removeLocal = useLibraryStore((state) => state.removeLocalTrack);
+  const hiddenSuggestions = useRecommendationStore((state) => state.hidden);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const active = current?.id === track.id;
@@ -69,6 +71,7 @@ export function SongRow({ track, context = [track], contextLabel = 'Queue', inde
       {menuOpen && <div className="row-menu" role="menu">
         <button role="menuitem" onClick={() => { addToQueue(track, true); setMenuOpen(false); }}>Play next</button>
         <button role="menuitem" onClick={() => { addToQueue(track); setMenuOpen(false); }}>Add to queue</button>
+        {track.source === 'remote' && <button role="menuitem" onClick={() => { useRecommendationStore.getState().toggleHidden(track.id); setMenuOpen(false); }}>{hiddenSuggestions.includes(track.id) ? 'Allow suggestions for this song' : 'Don’t suggest this song'}</button>}
         <TrackActions track={track} menu onComplete={() => setMenuOpen(false)} />
         {playlists.length > 0 && <div className="menu-label">Add to playlist</div>}
         {playlists.map((playlist) => <button role="menuitem" key={playlist.id} onClick={() => { void addToPlaylist(playlist.id, track); setMenuOpen(false); }}>{playlist.name}</button>)}
@@ -106,3 +109,4 @@ export function PlaylistCard({ id, title, artwork, count }: { id: string; title:
     <strong>{title}</strong><small>{count} {count === 1 ? 'song' : 'songs'}</small>
   </Link>;
 }
+
