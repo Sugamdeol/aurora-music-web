@@ -1,6 +1,6 @@
-/* Adcash standard Autotag. Failure must not stop Aurora from starting. */
+/* Standard Adcash interstitial. Autotag is intentionally removed. */
 (() => {
-  if (!window.aclib || typeof window.aclib.runAutoTag !== 'function') return;
-  try { window.aclib.runAutoTag({ zoneId: '4ntb53l2oj' }); }
-  catch (error) { console.warn('Adcash could not initialize:', error); }
+  if (!window.aclib || typeof window.aclib.runInterstitial !== 'function') return;
+  try { window.aclib.runInterstitial({ zoneId: '12261394' }); }
+  catch (error) { console.warn('Adcash interstitial could not initialize:', error); }
 })();

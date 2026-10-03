@@ -1,0 +1,2 @@
+.adcash-banner { width:728px; max-width:100%; min-height:90px; margin:12px auto; overflow:hidden; }
+@media (max-width:759px) { .adcash-banner { display:none; } }
