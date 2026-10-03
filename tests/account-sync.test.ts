@@ -47,3 +47,33 @@ describe('optional MantleDB account sync', () => {
     expect(response.body.configured).toBe(false);
   });
 });
+
+
+describe('sync error recovery', () => {
+  it('reports oversized uploads without a generic internal error', async () => {
+    const response = await request(app).put('/api/v1/sync/data').send({ padding: 'x'.repeat(70_000) });
+    expect(response.status).toBe(413);
+    expect(response.body.error.code).toBe('SYNC_TOO_LARGE');
+    expect(response.body.error.message).toContain('local library is safe');
+  });
+  it('reports storage timeouts and does not overwrite the stored account', async () => {
+    process.env.MANTLEDB_NAMESPACE = 'aurora-test'; process.env.MANTLEDB_KEY = 'a-test-secret-key';
+    vi.stubGlobal('fetch', mantleFetch);
+    const client = request.agent(app);
+    await client.post('/api/v1/sync/register').send({ username: 'timeout_user', password: 'a secure test password' });
+    const before = JSON.stringify([...records.values()]);
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('Timed out', 'TimeoutError')));
+    const response = await client.get('/api/v1/sync/data');
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe('SYNC_STORAGE_ERROR');
+    expect(response.body.error.message).toContain('local library is safe');
+    expect(JSON.stringify([...records.values()])).toBe(before);
+  });
+  it('reports unreadable storage responses clearly', async () => {
+    process.env.MANTLEDB_NAMESPACE = 'aurora-test'; process.env.MANTLEDB_KEY = 'a-test-secret-key';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('invalid json', { status: 200 })));
+    const response = await request(app).post('/api/v1/sync/login').send({ username: 'broken_user', password: 'a secure test password' });
+    expect(response.status).toBe(502);
+    expect(response.body.error.code).toBe('SYNC_STORAGE_ERROR');
+  });
+});

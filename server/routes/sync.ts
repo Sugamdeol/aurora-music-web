@@ -19,6 +19,7 @@ const syncSchema = z.object({
   tombstones: z.array(z.object({ id: z.string().max(120), deletedAt: z.number().finite() })).max(500).optional(),
 }).strict();
 
+type ResponseType = globalThis.Response;
 type Snapshot = z.infer<typeof syncSchema>;
 interface Account { username: string; salt: string; passwordHash: string; snapshot: Snapshot; updatedAt: number }
 const accountLocks = new Map<string, Promise<unknown>>();
@@ -35,16 +36,22 @@ function initialSnapshot(): Snapshot { return { tracks: [], playlists: [], histo
 
 async function mantle(method: 'GET'|'POST', path: string, body?: unknown): Promise<unknown> {
   const { namespace, key } = configured();
-  const response = await fetch(`https://mantledb.sh/v2/${encodeURIComponent(namespace)}/accounts/${path}`, {
+  let response: ResponseType;
+  try {
+    response = await fetch(`https://mantledb.sh/v2/${encodeURIComponent(namespace)}/accounts/${path}`, {
     method, headers: { 'X-Mantle-Key': key, ...(body ? { 'Content-Type': 'application/json' } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(8000),
   });
+  } catch {
+    throw new HttpError(503, 'SYNC_STORAGE_ERROR', 'Sync storage did not respond. Your local library is safe. Try again shortly.');
+  }
   if (response.status === 404) return null;
   if (!response.ok) {
     console.error('MantleDB request failed:', response.status);
     throw new HttpError(response.status === 429 ? 503 : 502, 'SYNC_STORAGE_ERROR', response.status === 429 ? 'Sync is temporarily busy. Try again soon.' : 'Could not reach sync storage. Try again later.');
   }
-  return response.json();
+  try { return await response.json(); }
+  catch { throw new HttpError(502, 'SYNC_STORAGE_ERROR', 'Sync storage returned an unreadable response. Your local library is safe. Try again later.'); }
 }
 
 // Session signing must not reuse the storage credential: leaking the MantleDB
@@ -143,7 +150,7 @@ export function createSyncRouter(): Router {
     const username = requireAccount(req, res);
     const snapshot = syncSchema.parse(req.body);
     const serialized = JSON.stringify(snapshot);
-    if (Buffer.byteLength(serialized) > 48_000) throw new HttpError(413, 'SYNC_TOO_LARGE', 'Your synced library is too large. Reduce history or playlist size and try again.');
+    if (Buffer.byteLength(serialized) > 48_000) throw new HttpError(413, 'SYNC_TOO_LARGE', 'Your library exceeds the sync storage limit. Your local library is safe. Export a backup from Settings before reducing history or playlist size.');
     const id = accountPath(username);
     const account = await serialize(id, async () => {
       const existing = await mantle('GET', id) as Account | null;
@@ -156,3 +163,4 @@ export function createSyncRouter(): Router {
   }));
   return router;
 }
+

@@ -35,6 +35,25 @@ describe('resume and sync regressions', () => {
     usePlaybackStore.getState().removeFromQueue(0);
     expect(usePlaybackStore.getState()).toMatchObject({ currentTrack: tracks[1], position: 0, duration: 200, status: 'loading' });
   });
+  it('compacts repeated history metadata and restores it on another device', async () => {
+    await db.tracks.put({ ...tracks[0], artwork: 'https://example.com/' + 'x'.repeat(500), likedAt: 1 });
+    await db.history.bulkAdd(Array.from({ length: 200 }, (_, index) => ({ trackId: 'a', playedAt: index + 1, listenedSeconds: 100, artist: 'Artist', trackTitle: 'a', artwork: 'https://example.com/' + 'x'.repeat(500) })));
+    let pushed: any;
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      if (init?.method === 'PUT') { pushed = JSON.parse(init.body); return new Response('{}'); }
+      return new Response(JSON.stringify({ snapshot: { tracks: [], playlists: [], history: [], settings: {} } }));
+    }));
+    await syncLibrary();
+    expect(pushed.history).toHaveLength(200);
+    expect(pushed.history[0].artwork).toBeUndefined();
+    expect((await db.history.toArray())[0].artwork).toContain('example.com');
+    const cloud = pushed;
+    await db.history.clear(); await db.tracks.clear();
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => new Response(init?.method === 'PUT' ? '{}' : JSON.stringify({ snapshot: cloud }))));
+    await syncLibrary();
+    expect((await db.history.toArray())[0]).toMatchObject({ artist: 'Artist', trackTitle: 'a', listenedSeconds: 100 });
+    expect((await db.history.toArray())[0].artwork).toContain('example.com');
+  });
   it('syncs remote removals and order, preserves local files, and chooses newer settings', async () => {
     await db.tracks.bulkPut([...tracks, { ...tracks[0], id: 'local', kind: 'local', source: 'local' }]);
     await db.playlists.put({ id: 'p', name: 'Mix', createdAt: 1, updatedAt: 1 });
@@ -56,3 +75,4 @@ describe('resume and sync regressions', () => {
     expect((await db.settings.get('playback'))?.value).toEqual({ autoplay: true });
   });
 });
+
