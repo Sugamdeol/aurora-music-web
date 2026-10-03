@@ -124,6 +124,7 @@ export function HomePage() {
       <Link to="/library?tab=local"><span className="home-shortcut-icon"><Icon name="folder" /></span><span><strong>On this device</strong><small>{localCount} local songs</small></span><Icon name="chevron-right" size={16} /></Link>
       <Link to="/room"><span className="home-shortcut-icon"><Icon name="users" /></span><span><strong>Listen together</strong><small>Make it a shared moment</small></span><Icon name="chevron-right" size={16} /></Link>
     </nav>
+    <HomeDiscovery section="quick-picks" artists={discoveryArtists} seeds={familiar} catalog={discovery.data} />
     <Section title="Continue listening" action={recent.length ? <button className="text-button" onClick={() => play(recent, 'Recently played')}>Play all <Icon name="play" size={14} /></button> : <Link className="text-button" to="/search">Find music</Link>}>
       {!ready ? <div className="horizontal-shelf">{[1, 2, 3, 4].map((item) => <Skeleton key={item} className="continue-skeleton" />)}</div> : recent.length ? <div className="horizontal-shelf continue-shelf">{recent.slice(0, 8).map((track) => <MediaCard key={track.id} item={track} context={recent} contextLabel="Recently played" />)}</div> : <EmptyState icon="music" title="Your listening starts here" action={<Link className="secondary-button" to="/search">Find a song</Link>}>Play something you love. It will be waiting here when you come back.</EmptyState>}
     </Section>
@@ -139,7 +140,7 @@ export function HomePage() {
     </Section>
     {discovery.isLoading && <Section title="Exploring new sounds"><div className="horizontal-shelf">{[1, 2, 3, 4, 5].map((item) => <Skeleton key={item} className="media-skeleton" />)}</div></Section>}
     {discovery.isError && <ErrorState title="Discovery is taking a moment" message="Online music could not be loaded. Your saved favorites and local music are still available." retry={() => void discovery.refetch()} />}
-    <HomeDiscovery artists={discoveryArtists} seeds={familiar} catalog={discovery.data} />
+    <HomeDiscovery section="remaining" artists={discoveryArtists} seeds={familiar} catalog={discovery.data} />
     <section className="home-explore-footer"><span>Keep following the sound.</span><div>{['Punjabi', 'Hindi', 'R&B', 'Indie', 'K-pop', 'Jazz'].map((genre) => <Link key={genre} to={`/search?q=${encodeURIComponent(`${genre} music`)}`}>{genre}<Icon name="chevron-right" size={13} /></Link>)}</div></section>
   </div>;
 }

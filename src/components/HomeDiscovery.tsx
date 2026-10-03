@@ -113,8 +113,8 @@ function DiscoveryShelf({ shelf, seeds, catalog }: { shelf: Shelf; seeds: MediaT
   </section>;
 }
 
-export function HomeDiscovery({ artists = [], seeds = [], catalog = [] }: { artists?: string[]; seeds?: MediaTrack[]; catalog?: MediaSection[] }) {
-  const shelves = useMemo(() => homeShelves(artists), [artists]);
+export function HomeDiscovery({ artists = [], seeds = [], catalog = [], section }: { artists?: string[]; seeds?: MediaTrack[]; catalog?: MediaSection[]; section?: 'quick-picks' | 'remaining' }) {
+  const shelves = useMemo(() => homeShelves(artists).filter((shelf) => section === 'quick-picks' ? shelf.id === 'quick-picks' : section === 'remaining' ? shelf.id !== 'quick-picks' : true), [artists, section]);
   return <div className="home-discovery">{shelves.map((shelf) => <DiscoveryShelf key={shelf.id} shelf={shelf} seeds={seeds} catalog={catalog} />)}</div>;
 }
 
