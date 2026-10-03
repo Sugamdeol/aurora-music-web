@@ -7,6 +7,7 @@ import { Icon, type IconName } from './Icon';
 import { IconButton } from './primitives';
 import { PlayerDock, PlayerOverlays } from './Player';
 import { useDialog } from '../hooks/useDialog';
+import { AdBanner } from './AdBanner';
 
 function ShortcutsSheet({ onClose }: { onClose: () => void }) {
   const ref = useDialog<HTMLDivElement>(true, onClose);
@@ -169,6 +170,7 @@ export function AppShell() {
         <IconButton icon="settings" label="Open settings" onClick={() => navigate('/settings')} />
       </header>
       <div className="route-stage"><Outlet /></div>
+      <AdBanner />
     </main>
 
     <PlayerDock />
@@ -178,4 +180,3 @@ export function AppShell() {
     {shortcutsOpen && <ShortcutsSheet onClose={() => setShortcutsOpen(false)} />}
   </div>;
 }
-
