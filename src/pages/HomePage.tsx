@@ -14,6 +14,8 @@ import { db } from '../lib/db';
 import { useYouTubeAccountStore } from '../store/youtubeAccount';
 import { dailyMix, uniqueTracks } from '../lib/homeMix';
 import './HomePage.css';
+import { buildTasteProfile, rankRecommendations, recommendationSeeds } from '../lib/recommendations';
+import { useRecommendationStore } from '../store/recommendations';
 
 const moods: Array<{ title: string; query: string; description: string; slug: string; tone: string }> = [
   { title: 'Slow mornings', query: 'slow morning acoustic music', description: 'Ease into the day', slug: 'slow-mornings', tone: '#dfb47d' },
@@ -36,6 +38,7 @@ function CurrentSongCard({ recent }: { recent: MediaTrack[] }) {
 }
 
 export function HomePage() {
+  const feedback = useRecommendationStore();
   const recent = useLibraryStore((state) => state.recent);
   const liked = useLibraryStore((state) => state.likedTracks);
   const localCount = useLibraryStore((state) => state.localTracks.length);
@@ -56,7 +59,7 @@ export function HomePage() {
   const library = useQuery({
     queryKey: ['home-library', dayStart, recent, liked.length, localCount], enabled: ready, staleTime: 30_000, refetchInterval: 60_000, retry: false,
     queryFn: async () => {
-      const [records, history] = await Promise.all([db.tracks.toArray(), db.history.where('playedAt').aboveOrEqual(dayStart).toArray()]);
+      const [records, history] = await Promise.all([db.tracks.toArray(), db.history.orderBy('playedAt').reverse().limit(500).toArray()]);
       const topTracks = records.filter((track) => (track.playCount ?? 0) > 0).sort((a, b) => (b.playCount ?? 0) - (a.playCount ?? 0));
       const artists = new Map<string, { name: string; artwork?: string; plays: number }>();
       for (const track of topTracks.filter((item) => item.source !== 'local')) {
@@ -65,24 +68,25 @@ export function HomePage() {
         const existing = artists.get(key);
         artists.set(key, { name: existing?.name ?? track.artist, artwork: existing?.artwork ?? track.artwork, plays: (existing?.plays ?? 0) + (track.playCount ?? 0) });
       }
-      return { topTracks: topTracks.slice(0, 8), artists: [...artists.values()].sort((a, b) => b.plays - a.plays).slice(0, 5), todaySeconds: history.reduce((sum, entry) => sum + (entry.listenedSeconds ?? 0), 0), todayPlays: history.length };
+      return { history, topTracks: topTracks.slice(0, 8), artists: [...artists.values()].sort((a, b) => b.plays - a.plays).slice(0, 5), todaySeconds: history.filter((entry) => entry.playedAt >= dayStart).reduce((sum, entry) => sum + (entry.listenedSeconds ?? 0), 0), todayPlays: history.filter((entry) => entry.playedAt >= dayStart).length };
     },
   });
-  const tasteSeeds = useMemo(() => uniqueTracks([...youtubeLikes.slice(0, 3), ...liked.slice(0, 2), ...(library.data?.topTracks ?? []), ...recent]).filter((track) => track.source !== 'local').slice(0, 5).map((track) => track.id), [youtubeLikes, liked, library.data?.topTracks, recent]);
+  const profile = useMemo(() => buildTasteProfile(uniqueTracks([...liked, ...youtubeLikes]), library.data?.history ?? []), [liked, youtubeLikes, library.data?.history]);
+  const tasteSeeds = useMemo(() => recommendationSeeds(uniqueTracks([...youtubeLikes, ...liked, ...(library.data?.topTracks ?? []), ...recent]), profile, feedback).map((track) => track.id), [youtubeLikes, liked, library.data?.topTracks, recent, profile, feedback]);
   const personal = useQuery({
-    queryKey: ['made-for-you', tasteSeeds], enabled: tasteSeeds.length > 0, staleTime: 10 * 60_000, retry: 1,
+    queryKey: ['made-for-you', tasteSeeds, profile.artists, feedback.hidden, feedback.skips], enabled: tasteSeeds.length > 0, staleTime: 10 * 60_000, retry: 1,
     queryFn: async ({ signal }) => {
       const results = await Promise.allSettled(tasteSeeds.map((id) => api.related(id, signal)));
       if (results.every((result) => result.status === 'rejected')) throw new Error('Your discoveries could not be reached. Your saved music is still here.');
       const seen = new Set([...recent, ...liked, ...youtubeLikes].map((track) => track.id));
-      return uniqueTracks(results.flatMap((result) => result.status === 'fulfilled' ? result.value : [])).filter((track) => !seen.has(track.id)).slice(0, 24);
+      return rankRecommendations(results.flatMap((result) => result.status === 'fulfilled' ? result.value : []).filter((track) => !seen.has(track.id)), profile, feedback, { limit: 24, day: Math.floor(dayStart / 86_400_000) });
     },
   });
   const discovery = useQuery({ queryKey: ['home'], queryFn: ({ signal }) => api.home(signal), staleTime: 5 * 60_000, retry: 1 });
   const discoveryTracks = useMemo(() => discovery.data?.flatMap((section) => section.items).filter((item): item is MediaTrack => 'source' in item) ?? [], [discovery.data]);
   const familiar = useMemo(() => uniqueTracks([...liked, ...recent, ...(library.data?.topTracks ?? []), ...youtubeLikes]).slice(0, 20), [liked, recent, library.data?.topTracks, youtubeLikes]);
-  const discoveryArtists = useMemo(() => (library.data?.artists ?? []).map((artist) => artist.name), [library.data?.artists]);
-  const mix = useMemo(() => dailyMix(familiar, personal.data?.length ? personal.data : discoveryTracks, Math.floor(dayStart / 86_400_000)), [familiar, personal.data, discoveryTracks, dayStart]);
+  const discoveryArtists = useMemo(() => recommendationSeeds(familiar, profile, feedback, 4).map((track) => track.artist), [familiar, profile, feedback]);
+  const mix = useMemo(() => dailyMix(familiar.filter((track) => !feedback.hidden.includes(track.id)), rankRecommendations(personal.data?.length ? personal.data : discoveryTracks, profile, feedback, { limit: 24 }), Math.floor(dayStart / 86_400_000)), [familiar, personal.data, discoveryTracks, dayStart, profile, feedback]);
   useEffect(() => {
     const first = mix[0];
     if (!first || first.source !== 'remote') return;
@@ -139,3 +143,4 @@ export function HomePage() {
     <section className="home-explore-footer"><span>Keep following the sound.</span><div>{['Punjabi', 'Hindi', 'R&B', 'Indie', 'K-pop', 'Jazz'].map((genre) => <Link key={genre} to={`/search?q=${encodeURIComponent(`${genre} music`)}`}>{genre}<Icon name="chevron-right" size={13} /></Link>)}</div></section>
   </div>;
 }
+

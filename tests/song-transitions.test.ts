@@ -102,8 +102,8 @@ describe('audio transitions', () => {
 
   it('keeps adding unique songs after a playlist ends', async () => {
     useLibraryStore.setState({ playbackSettings: { ...DEFAULT_PLAYBACK_SETTINGS, transitionMode: 'off', autoplay: true } });
-    const fourth = { ...tracks[0], id: 'four' };
-    const fifth = { ...tracks[0], id: 'five' };
+    const fourth = { ...tracks[0], id: 'four', title: 'four' };
+    const fifth = { ...tracks[0], id: 'five', title: 'five' };
     vi.spyOn(api, 'related').mockImplementation(async (id) => id === 'two' ? [tracks[0], tracks[1], fourth] : id === 'four' ? [fifth] : []);
     usePlaybackStore.getState().playTracks(tracks.slice(0, 2), 1, 'Playlist');
     await settle();
@@ -256,3 +256,4 @@ describe('audio transitions', () => {
     play.mockRestore();
   });
 });
+

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useRecommendationStore } from './recommendations';
 import type { MediaTrack, PlaybackStatus, RepeatMode } from '../domain/media';
 import { getSetting, setSetting } from '../lib/db';
 
@@ -205,6 +206,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         else { set({ isPlaying: false, status: 'paused', position: state.duration }); return; }
       }
     }
+    if (!automatic && state.currentTrack && state.status === 'playing' && state.position >= 2 && state.position < 30 && state.position < (state.duration || 180) * .3) useRecommendationStore.getState().recordSkip(state.currentTrack.id);
     const current = updateCurrent(state.queue, index);
     set({ ...current, isPlaying: true, status: 'loading', error: undefined, position: 0, duration: current.currentTrack?.durationSeconds ?? 0, sourceRevision: state.sourceRevision + 1, shuffleHistory, buffered: 0 });
     persist({ ...state, ...current });
@@ -330,3 +332,4 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   openFullPlayer: (open) => set((state) => ({ fullPlayerOpen: open ?? !state.fullPlayerOpen, activeSheet: open === false ? null : state.activeSheet })),
   openSheet: (activeSheet) => set({ activeSheet }),
 }));
+
