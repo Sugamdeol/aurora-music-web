@@ -66,10 +66,16 @@ async function localSnapshot(): Promise<SyncSnapshot> {
   const eligible = tracks.filter((track) => track.source === 'remote' && (track.likedAt || track.lastPlayedAt || inPlaylist.has(track.id)));
   const byPlaylist = new Map<string, typeof joins>();
   for (const join of joins) byPlaylist.set(join.playlistId, [...(byPlaylist.get(join.playlistId) ?? []), join]);
+  const syncedTracks = eligible.slice(0, 500).map(remoteTrack);
+  const syncedIds = new Set(syncedTracks.map((track) => track.id));
   return {
-    tracks: eligible.slice(0, 500).map(remoteTrack),
+    tracks: syncedTracks,
     playlists: playlists.slice(0, 100).map(({ id, name, description, artwork, createdAt, updatedAt }) => ({ id, name, description, artwork, createdAt, updatedAt, trackIds: (byPlaylist.get(id) ?? []).sort((a,b)=>a.position-b.position).map((join)=>join.trackId).slice(0,500) })),
-    history: history.map(({ id: _id, ...item }) => item),
+    // Artwork and titles can repeat hundreds of times in history. Send one
+    // copy in tracks and rebuild metadata when another device receives it.
+    history: history.map(({ id: _id, ...item }) => syncedIds.has(item.trackId)
+      ? { trackId: item.trackId, playedAt: item.playedAt, listenedSeconds: item.listenedSeconds }
+      : item),
     settings: { appearance: (appearance?.value as Record<string, unknown> | undefined), playback: (playback?.value as Record<string, unknown> | undefined) },
     settingsUpdatedAt: { appearance: appearance?.updatedAt ?? 0, playback: playback?.updatedAt ?? 0 },
     tombstones: tombstones.filter((item) => Date.now() - item.deletedAt < TOMBSTONE_TTL_MS),
@@ -142,7 +148,11 @@ async function writeMergedSnapshot(cloud: SyncSnapshot): Promise<void> {
       if (rebuilt.length) await db.playlistTracks.bulkAdd(rebuilt);
     }
     const existing = new Set(oldHist.map((item)=>`${item.trackId}:${item.playedAt}`));
-    const history = merged.history.filter((item)=>!existing.has(`${item.trackId}:${item.playedAt}`));
+    const metadata = new Map(merged.tracks.map((track) => [track.id, track]));
+    const history = merged.history.filter((item)=>!existing.has(`${item.trackId}:${item.playedAt}`)).map((item) => {
+      const track = metadata.get(item.trackId);
+      return { ...item, trackTitle: item.trackTitle ?? track?.title, artist: item.artist ?? track?.artist, artwork: item.artwork ?? track?.artwork };
+    });
     if (history.length) await db.history.bulkAdd(history);
     for (const key of ['appearance','playback'] as const) if (merged.settings[key]) await db.settings.put({ key, value: merged.settings[key], updatedAt: merged.settingsUpdatedAt?.[key] ?? 0 });
     await db.settings.put({ key: TOMBSTONE_KEY, value: (merged.tombstones ?? []).filter((item) => Date.now() - item.deletedAt < TOMBSTONE_TTL_MS), updatedAt: Date.now() });
@@ -158,7 +168,9 @@ export async function syncLibrary(): Promise<void> {
     const response = await request<{ snapshot: SyncSnapshot }>('/data');
     await writeMergedSnapshot(response.snapshot ?? { tracks: [], playlists: [], history: [], settings: {} });
     const snapshot = await localSnapshot();
-    await request('/data', { method: 'PUT', body: JSON.stringify(snapshot) });
+    const body = JSON.stringify(snapshot);
+    if (new TextEncoder().encode(body).byteLength > 48_000) throw new Error('Your library exceeds the sync storage limit. Your local library is safe. Export a backup from Settings before reducing history or playlist size.');
+    await request('/data', { method: 'PUT', body });
   } finally { syncInProgress = false; }
 }
 
@@ -194,3 +206,4 @@ export function enableAutomaticSync(): void {
   };
 }
 export function disableAutomaticSync(): void { automaticUnsubscribe?.(); }
+

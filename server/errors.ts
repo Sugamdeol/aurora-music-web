@@ -107,7 +107,13 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, req, res, next
     return;
   }
 
+  if (parserError?.status === 413 && parserError.type === 'entity.too.large') {
+    sendError(req, res, new HttpError(413, 'SYNC_TOO_LARGE', 'The data is too large to upload. Your local library is safe. Export a backup from Settings before reducing history or playlist size.'));
+    return;
+  }
+
   const message = error instanceof Error ? error.message : String(error);
   console.error(`[${String(res.locals.requestId || 'no-request-id')}] Unhandled request error:`, message);
   sendError(req, res, new HttpError(500, 'INTERNAL_ERROR', 'Aurora encountered an unexpected error.'));
 };
+
