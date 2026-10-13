@@ -2,6 +2,7 @@ import type { MediaTrack } from '../domain/media';
 import { api } from './api';
 import { uniqueTracks } from './homeMix';
 import { usePlaybackStore } from '../store/playback';
+import { useLibraryStore } from '../store/library';
 
 let radioRequest = 0;
 export async function startTrackRadio(track: MediaTrack): Promise<boolean> {
@@ -13,6 +14,13 @@ export async function startTrackRadio(track: MediaTrack): Promise<boolean> {
   if (!related.length) throw new Error('No radio suggestions found for this song. Try another track.');
   usePlaybackStore.getState().playTracks([track, ...related.slice(0, 30)], 0, `${track.title} radio`);
   return true;
+}
+
+// Downloads honor the streaming quality preference picked in Settings.
+export async function downloadTrack(track: MediaTrack): Promise<void> {
+  if (track.source === 'local') throw new Error('This song is already saved on your device.');
+  const quality = useLibraryStore.getState().playbackSettings.preferredQuality;
+  await api.downloadTrack(track, quality);
 }
 
 export function songShareUrl(track: MediaTrack): string {

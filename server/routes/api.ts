@@ -102,6 +102,33 @@ function missingYtDlp(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
 }
 
+// A download reuses the playback pipeline but answers with a saveable
+// attachment instead of a seekable stream. Title and artist arrive as query
+// parameters and only shape the suggested filename; the id alone decides
+// which track is served.
+function downloadExtension(contentType: string): string {
+  const type = contentType.toLowerCase();
+  if (type.includes('webm')) return '.webm';
+  if (type.includes('mpeg')) return '.mp3';
+  if (type.includes('ogg')) return '.ogg';
+  return '.m4a';
+}
+
+function safeDownloadName(title: string, artist: string, id: string): string {
+  const clean = (value: string) => value
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/[\\/:*?"<>|]+/g, ' ')
+    .replace(/\.{2,}/g, '.')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const label = clean(artist && title ? `${artist} - ${title}` : (title || artist)).slice(0, 120);
+  return (label.replace(/[. ]+$/, '') || id);
+}
+
+function rfc5987(value: string): string {
+  return encodeURIComponent(value).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
 function clientDisconnected(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
 }
@@ -523,6 +550,87 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
         missingYtDlp(error)
           ? 'yt-dlp is required for playback. Install it with: py -3 -m pip install --user -r web/requirements.txt'
           : 'Could not start playback. yt-dlp could not extract this song.',
+      );
+    } finally {
+      req.off('aborted', abort);
+    }
+  }));
+
+  // Full-track download: same resolved audio as playback, delivered as an
+  // attachment so browsers save it instead of playing it. Downloads cost a
+  // complete upstream transfer, so the limiter is far tighter than streaming.
+  router.get('/download/:id', limiter(30, 15 * 60_000), asyncHandler(async (req, res) => {
+    const { id } = parseWith(trackParamsSchema, req.params);
+    const quality = requestedQuality(req.query.quality);
+    const title = typeof req.query.title === 'string' ? req.query.title.trim().slice(0, 150) : '';
+    const artist = typeof req.query.artist === 'string' ? req.query.artist.trim().slice(0, 100) : '';
+
+    const disconnectController = new AbortController();
+    const abort = (): void => disconnectController.abort();
+    req.once('aborted', abort);
+    res.once('close', abort);
+
+    try {
+      let upstream: Response | undefined;
+      let mimeType: string | undefined;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const format = await audio.getAudioFormat(id, attempt > 0, quality);
+        mimeType = format.mimeType ?? mimeType;
+        try {
+          upstream = await fetchMedia(format.url, new Headers(format.httpHeaders), disconnectController.signal);
+        } catch (error) {
+          if (disconnectController.signal.aborted) throw error;
+          if (attempt === 0) {
+            audio.invalidate(id);
+            continue;
+          }
+          throw error;
+        }
+        if (upstream.ok && upstream.body) break;
+        audio.invalidate(id);
+        await upstream.body?.cancel().catch(() => undefined);
+        if (attempt === 1) {
+          throw new HttpError(
+            502,
+            'UPSTREAM_ERROR',
+            `yt-dlp could not fetch this track (upstream ${upstream.status}). Try another song.`,
+          );
+        }
+      }
+
+      if (!upstream?.ok || !upstream.body) {
+        throw new HttpError(502, 'UPSTREAM_ERROR', 'yt-dlp did not return an audio stream.');
+      }
+
+      const contentType = upstream.headers.get('content-type') ?? mimeType ?? 'audio/mpeg';
+      const extension = downloadExtension(contentType);
+      const name = safeDownloadName(title, artist, id);
+      const asciiName = name.replace(/[^\x20-\x7e]/g, '').replace(/["\\]/g, '').trim() || id;
+
+      res.status(upstream.status);
+      res.setHeader('Content-Type', contentType);
+      const contentLength = upstream.headers.get('content-length');
+      if (contentLength) res.setHeader('Content-Length', contentLength);
+      res.setHeader('Content-Disposition', `attachment; filename="${asciiName}${extension}"; filename*=UTF-8''${rfc5987(name)}${extension}`);
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      Readable.fromWeb(upstream.body as never)
+        .on('error', (error) => {
+          if (!clientDisconnected(error)) console.error('Audio download failed:', error.message);
+          if (!res.destroyed) res.destroy(error);
+        })
+        .pipe(res);
+    } catch (error) {
+      if (disconnectController.signal.aborted) return;
+      if (error instanceof HttpError) throw error;
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error('Download request failed:', detail);
+      throw new HttpError(
+        missingYtDlp(error) ? 503 : 502,
+        missingYtDlp(error) ? 'SERVICE_UNAVAILABLE' : 'UPSTREAM_ERROR',
+        missingYtDlp(error)
+          ? 'yt-dlp is required for downloads. Install it with: py -3 -m pip install --user -r web/requirements.txt'
+          : 'Could not start the download. yt-dlp could not extract this song.',
       );
     } finally {
       req.off('aborted', abort);

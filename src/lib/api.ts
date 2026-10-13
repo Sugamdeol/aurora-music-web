@@ -36,6 +36,27 @@ function normalizeKind(value: unknown, fallback: MediaKind): MediaKind {
   return ['song', 'video', 'album', 'artist', 'playlist', 'local'].includes(kind) ? kind as MediaKind : fallback;
 }
 
+// Prefer the server-provided name (it mirrors the attachment header); fall
+// back to a locally sanitized "artist - title" with an extension derived
+// from the response content type.
+function downloadFilename(track: MediaTrack, disposition: string | null, contentType: string | null): string {
+  const encoded = disposition?.match(/filename\*=(?:utf-8|UTF-8)''([^;]+)/)?.[1];
+  if (encoded) {
+    try { return decodeURIComponent(encoded.trim()); } catch { /* fall through */ }
+  }
+  const quoted = disposition?.match(/filename="([^"]+)"/)?.[1];
+  if (quoted) return quoted;
+  const clean = (value: string) => value
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/[\\/:*?"<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const label = clean(track.artist && track.title ? `${track.artist} - ${track.title}` : (track.title || track.id)).slice(0, 120).replace(/[. ]+$/, '') || track.id;
+  const type = (contentType ?? '').toLowerCase();
+  const extension = type.includes('webm') ? '.webm' : type.includes('mpeg') ? '.mp3' : type.includes('ogg') ? '.ogg' : '.m4a';
+  return `${label}${extension}`;
+}
+
 export function normalizeMedia(value: unknown, fallback: MediaKind = 'song'): MediaEntity | MediaTrack | null {
   const source = asRecord(value);
   const kind = normalizeKind(source.kind ?? source.type ?? source.item_type, fallback);
@@ -150,6 +171,31 @@ export const api = {
     const suffix = quality === 'auto' ? '' : `?quality=${encodeURIComponent(quality)}`;
     const response = await fetch(`/api/v1/stream-warm/${encodeURIComponent(track.id)}${suffix}`, { cache: 'no-store' });
     if (!response.ok) throw new ApiError('Could not prepare this song.', response.status);
+  },
+  // Fetches the full track as a blob so failures surface as messages; the
+  // save itself happens through a temporary object URL anchor click.
+  async downloadTrack(track: MediaTrack, quality: 'auto' | 'high' | 'data-saver' = 'auto'): Promise<void> {
+    if (track.source !== 'remote') throw new ApiError('Only online songs can be downloaded.');
+    const params = new URLSearchParams({ title: track.title, artist: track.artist });
+    if (quality !== 'auto') params.set('quality', quality);
+    const response = await fetch(`/api/v1/download/${encodeURIComponent(track.id)}?${params}`, { cache: 'no-store' });
+    if (!response.ok) {
+      const body = asRecord(await response.json().catch(() => ({})));
+      throw new ApiError(errorMessage(asRecord(body).error) || 'The download could not be started.', response.status);
+    }
+    const filename = downloadFilename(track, response.headers.get('content-disposition'), response.headers.get('content-type'));
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    try {
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    }
   },
   async health(signal?: AbortSignal): Promise<boolean> {
     try {
