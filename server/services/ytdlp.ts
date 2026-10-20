@@ -55,7 +55,7 @@ export function formatSelector(quality: AudioQuality): string {
   return 'bestaudio[ext=m4a]/bestaudio';
 }
 
-function commandSpec(): CommandSpec {
+export function commandSpec(): CommandSpec {
   const configured = process.env.YT_DLP_PATH?.trim();
   if (configured) {
     return { command: configured, prefix: [], label: path.basename(configured) || 'yt-dlp' };

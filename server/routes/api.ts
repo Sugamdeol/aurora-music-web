@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { Router, type RequestHandler } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { HttpError, asyncHandler, sendError, withTimeout } from '../errors.js';
@@ -10,7 +11,7 @@ import {
   normalizeSections,
   normalizeSuggestions,
 } from '../normalizers.js';
-import { isAllowedMediaUrl, type AudioExtractor, type AudioQuality } from '../services/ytdlp.js';
+import { isAllowedMediaUrl, commandSpec, formatSelector, type AudioExtractor, type AudioQuality } from '../services/ytdlp.js';
 import { romanizeLyrics, LYRIC_LANGUAGES } from '../services/romanization.js';
 import { fetchLyrics } from '../services/lyrics.js';
 import { generateMusicIdea } from '../services/ai.js';
@@ -133,22 +134,42 @@ function clientDisconnected(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
 }
 
-async function fetchMedia(url: string, headers: Headers, signal: AbortSignal): Promise<Response> {
-  let currentUrl = url;
-  for (let redirects = 0; redirects <= 3; redirects += 1) {
-    const response = await fetch(currentUrl, { headers, redirect: 'manual', signal });
-    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+function streamYtDlp(id: string, quality: AudioQuality, signal: AbortSignal): NodeJS.ReadableStream {
+  const spec = commandSpec();
+  const cookieFile = process.env.YT_DLP_COOKIE_FILE?.trim();
+  const cookieArgs: string[] = cookieFile ? ['--cookies', cookieFile] : [];
 
-    const location = response.headers.get('location');
-    await response.body?.cancel().catch(() => undefined);
-    if (!location) return response;
-    const nextUrl = new URL(location, currentUrl).href;
-    if (!isAllowedMediaUrl(nextUrl)) {
-      throw new HttpError(502, 'UPSTREAM_ERROR', 'The audio provider returned an unsafe redirect.');
+  const args = [
+    ...spec.prefix,
+    ...cookieArgs,
+    '--no-playlist',
+    '--force-ipv4',
+    '--socket-timeout', '10',
+    '--retries', '1',
+    '--extractor-retries', '1',
+    '--js-runtimes', process.env.YT_DLP_JS_RUNTIME?.trim() || `node:${process.execPath}`,
+    '--output', '-',
+    '--format', formatSelector(quality),
+    '--', `https://www.youtube.com/watch?v=${id}`,
+  ];
+
+  const child = spawn(spec.command, args, {
+    env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=160' },
+    signal,
+  });
+
+  child.stderr?.on('data', (chunk) => {
+    const text = chunk.toString();
+    if (/ERROR|FAIL|Unable to download/.test(text)) {
+      console.error('yt-dlp:', text.trim().slice(0, 300));
     }
-    currentUrl = nextUrl;
-  }
-  throw new HttpError(502, 'UPSTREAM_ERROR', 'The audio provider returned too many redirects.');
+  });
+
+  child.on('error', (error) => {
+    console.error('yt-dlp spawn error:', error.message);
+  });
+
+  return child.stdout!;
 }
 
 export function createApiRouter({ music, audio }: ApiDependencies): Router {
@@ -459,11 +480,6 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
   router.get('/stream/:id', limiter(400, 15 * 60_000), asyncHandler(async (req, res) => {
     const { id } = parseWith(trackParamsSchema, req.params);
     const quality = requestedQuality(req.query.quality);
-    const range = req.headers.range;
-    if (range) {
-      const result = rangeHeaderSchema.safeParse(range);
-      if (!result.success) throw new HttpError(416, 'BAD_REQUEST', 'Invalid Range header.');
-    }
 
     const disconnectController = new AbortController();
     const abort = (): void => disconnectController.abort();
@@ -471,74 +487,20 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
     res.once('close', abort);
 
     try {
-      let upstream: Response | undefined;
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const format = req.query.prefetch === '1'
-          ? await audio.getAudioFormat(id, attempt > 0, quality, 'background')
-          : await audio.getAudioFormat(id, attempt > 0, quality);
-        const headers = new Headers(format.httpHeaders);
-        if (range) headers.set('Range', range);
+      const format = await audio.getAudioFormat(id, false, quality);
+      const media = streamYtDlp(id, quality, disconnectController.signal);
 
-        const connectionController = new AbortController();
-        const connectionTimer = setTimeout(() => connectionController.abort(), STREAM_CONNECT_TIMEOUT_MS);
-        connectionTimer.unref?.();
-        try {
-          upstream = await fetchMedia(
-            format.url,
-            headers,
-            AbortSignal.any([disconnectController.signal, connectionController.signal]),
-          );
-        } catch (error) {
-          if (disconnectController.signal.aborted) throw error;
-          if (attempt === 0) {
-            audio.invalidate(id);
-            continue;
-          }
-          if (connectionController.signal.aborted) {
-            throw new HttpError(504, 'REQUEST_TIMEOUT', 'The song server took too long to respond. Please retry.');
-          }
-          throw error;
-        } finally {
-          clearTimeout(connectionTimer);
-        }
-
-        if (upstream.ok && upstream.body) break;
-        if (range && upstream.status === 416) {
-          res.status(416);
-          const contentRange = upstream.headers.get('content-range');
-          if (contentRange) res.setHeader('Content-Range', contentRange);
-          await upstream.body?.cancel().catch(() => undefined);
-          res.end();
-          return;
-        }
-        audio.invalidate(id);
-        await upstream.body?.cancel().catch(() => undefined);
-        if (attempt === 1) {
-          throw new HttpError(
-            502,
-            'UPSTREAM_ERROR',
-            `yt-dlp could not fetch this track (upstream ${upstream.status}). Try another song.`,
-          );
-        }
-      }
-
-      if (!upstream?.ok || !upstream.body) {
-        throw new HttpError(502, 'UPSTREAM_ERROR', 'yt-dlp did not return an audio stream.');
-      }
-
-      res.status(upstream.status);
-      for (const key of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified']) {
-        const value = upstream.headers.get(key);
-        if (value) res.setHeader(key, value);
-      }
+      res.status(200);
+      res.setHeader('Content-Type', format.mimeType || 'audio/mpeg');
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('X-Content-Type-Options', 'nosniff');
-      Readable.fromWeb(upstream.body as never)
-        .on('error', (error) => {
-          if (!clientDisconnected(error)) console.error('Audio stream failed:', error.message);
-          if (!res.destroyed) res.destroy(error);
-        })
-        .pipe(res);
+      res.setHeader('Accept-Ranges', 'none');
+
+      media.pipe(res);
+      media.on('error', (error) => {
+        if (!clientDisconnected(error)) console.error('Audio stream failed:', error.message);
+        if (!res.destroyed) res.destroy(error);
+      });
     } catch (error) {
       if (disconnectController.signal.aborted) return;
       if (error instanceof HttpError) throw error;
@@ -571,55 +533,25 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
     res.once('close', abort);
 
     try {
-      let upstream: Response | undefined;
-      let mimeType: string | undefined;
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const format = await audio.getAudioFormat(id, attempt > 0, quality);
-        mimeType = format.mimeType ?? mimeType;
-        try {
-          upstream = await fetchMedia(format.url, new Headers(format.httpHeaders), disconnectController.signal);
-        } catch (error) {
-          if (disconnectController.signal.aborted) throw error;
-          if (attempt === 0) {
-            audio.invalidate(id);
-            continue;
-          }
-          throw error;
-        }
-        if (upstream.ok && upstream.body) break;
-        audio.invalidate(id);
-        await upstream.body?.cancel().catch(() => undefined);
-        if (attempt === 1) {
-          throw new HttpError(
-            502,
-            'UPSTREAM_ERROR',
-            `yt-dlp could not fetch this track (upstream ${upstream.status}). Try another song.`,
-          );
-        }
-      }
+      const format = await audio.getAudioFormat(id, false, quality);
+      const media = streamYtDlp(id, quality, disconnectController.signal);
 
-      if (!upstream?.ok || !upstream.body) {
-        throw new HttpError(502, 'UPSTREAM_ERROR', 'yt-dlp did not return an audio stream.');
-      }
-
-      const contentType = upstream.headers.get('content-type') ?? mimeType ?? 'audio/mpeg';
+      const contentType = format.mimeType ?? 'audio/mpeg';
       const extension = downloadExtension(contentType);
       const name = safeDownloadName(title, artist, id);
       const asciiName = name.replace(/[^\x20-\x7e]/g, '').replace(/["\\]/g, '').trim() || id;
 
-      res.status(upstream.status);
+      res.status(200);
       res.setHeader('Content-Type', contentType);
-      const contentLength = upstream.headers.get('content-length');
-      if (contentLength) res.setHeader('Content-Length', contentLength);
       res.setHeader('Content-Disposition', `attachment; filename="${asciiName}${extension}"; filename*=UTF-8''${rfc5987(name)}${extension}`);
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('X-Content-Type-Options', 'nosniff');
-      Readable.fromWeb(upstream.body as never)
-        .on('error', (error) => {
-          if (!clientDisconnected(error)) console.error('Audio download failed:', error.message);
-          if (!res.destroyed) res.destroy(error);
-        })
-        .pipe(res);
+
+      media.pipe(res);
+      media.on('error', (error) => {
+        if (!clientDisconnected(error)) console.error('Audio download failed:', error.message);
+        if (!res.destroyed) res.destroy(error);
+      });
     } catch (error) {
       if (disconnectController.signal.aborted) return;
       if (error instanceof HttpError) throw error;

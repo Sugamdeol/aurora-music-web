@@ -11,6 +11,8 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    // allow cloudflared / any remote host to reach the dev server
+    allowedHosts: true,
   },
   test: {
     environment: 'jsdom',

@@ -1265,3 +1265,53 @@ body { background:radial-gradient(ellipse 68% 42% at 53% -20%,rgba(138,255,24,.0
   .browse-category-grid { gap:10px; }
   .search-idle { gap:30px; }
 }
+
+/* ── Liquid Glass specular (WWDC 2025 material) ──────────────────────────
+   Reactive translucency: a specular highlight that tracks the pointer across
+   glass surfaces, plus a tint-accent lobe. Static glassmorphism is a fixed
+   recipe; this reacts per frame. Honors prefers-reduced-motion. */
+:root {
+  --glass-pointer-x: 50%;
+  --glass-pointer-y: 50%;
+}
+
+.glass-surface { position: relative; }
+
+.glass-surface::before,
+.player-dock::before,
+.side-rail::before {
+  content: "";
+  position: absolute;
+  inset: -10%;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    radial-gradient(
+      800px 1000px at var(--glass-pointer-x) var(--glass-pointer-y),
+      rgba(255, 255, 255, 0.18),
+      transparent 42%
+    ),
+    radial-gradient(
+      1100px 800px at calc(var(--glass-pointer-x) - 25%) calc(var(--glass-pointer-y) + 45%),
+      rgba(138, 255, 24, 0.11),
+      transparent 48%
+    );
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 12%, #000 88%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 12%, #000 88%, transparent 100%);
+}
+
+.glass-surface:hover::before,
+.player-dock:hover::before,
+.side-rail:hover::before {
+  opacity: 0.75;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-surface::before,
+  .player-dock::before,
+  .side-rail::before {
+    display: none !important;
+  }
+}

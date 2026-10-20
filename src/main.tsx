@@ -11,11 +11,36 @@ import './smooth-mode.css';
 import './player-reference.css';
 import './mobile.css';
 
+declare global {
+  interface Window {
+    __glassPointer?: boolean;
+  }
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { refetchOnWindowFocus: false, retry: 1 },
   },
 });
+
+// Liquid glass pointer tracking — drives specular highlights on glass surfaces
+if (typeof window !== 'undefined' && !window.__glassPointer) {
+  window.__glassPointer = true;
+  window.addEventListener(
+    'mousemove',
+    (e) => {
+      document.documentElement.style.setProperty(
+        '--glass-pointer-x',
+        `${(e.clientX / window.innerWidth) * 100}%`
+      );
+      document.documentElement.style.setProperty(
+        '--glass-pointer-y',
+        `${(e.clientY / window.innerHeight) * 100}%`
+      );
+    },
+    { passive: true }
+  );
+}
 
 // Install the offline shell (public/sw.js). Dev mode skips registration so the
 // service worker never interferes with the HMR pipeline.
