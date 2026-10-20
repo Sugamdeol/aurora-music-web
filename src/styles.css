@@ -1275,7 +1275,7 @@ body { background:radial-gradient(ellipse 68% 42% at 53% -20%,rgba(138,255,24,.0
   --glass-pointer-y: 50%;
 }
 
-.glass-surface { position: relative; }
+.glass-surface:not(.player-dock):not(.side-rail) { position: relative; }
 
 .glass-surface::before,
 .player-dock::before,
