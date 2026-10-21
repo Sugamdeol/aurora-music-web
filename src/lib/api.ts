@@ -301,10 +301,12 @@ export function streamCandidates(track: MediaTrack, quality: 'auto' | 'high' | '
   const id = encodeURIComponent(track.id);
   const suffix = quality === 'auto' ? '' : `?quality=${encodeURIComponent(quality)}`;
   const resolver = `/api/v1/stream/${id}${suffix}`;
-  // streamUrl is a signed URL that expires within hours. A restored queue or an
-  // expired mid-session URL must still be able to fall back to a fresh
-  // server-side resolution instead of dead-ending with an unrecoverable error.
-  const candidates = track.streamUrl && track.streamUrl !== resolver ? [track.streamUrl, resolver] : [resolver];
+  // The server resolver comes first: it serves the track from the local
+  // audio cache with range support. A signed YouTube URL is bound to the
+  // address that fetched it, so a browser playing it directly gets a 403
+  // and only recovers after the failed request times out. The signed URL
+  // stays as a last-resort fallback.
+  const candidates = track.streamUrl && track.streamUrl !== resolver ? [resolver, track.streamUrl] : [resolver];
   return track.source === 'local' ? [] : candidates;
 }
 
@@ -324,4 +326,43 @@ export function prefetchTrack(track: MediaTrack, quality: 'auto' | 'high' | 'dat
   // download in the background. Delaying it would defeat the purpose, which
   // is to have the next song ready long before it is needed.
   void fetch(url, { method: 'GET', mode: 'cors', credentials: 'same-origin' }).catch(() => undefined);
+}
+
+/** What the server measured about a track, used to place an Auto Mix blend. */
+export interface TrackAnalysis {
+  /** Estimated tempo in beats per minute. */
+  bpm?: number;
+  /** Where the blend should start, in seconds from the start of the track. */
+  blendStart: number;
+  /** Where the final outro or silence begins, in seconds. */
+  outroStart?: number;
+  /** Length of the track in seconds. */
+  duration: number;
+}
+
+/**
+ * Fetches the server's analysis of a track.
+ *
+ * The server measures the whole file, so it knows the tempo and where the
+ * song breathes before it ends, even when the browser has not played that
+ * part yet.
+ */
+export async function fetchTrackAnalysis(track: MediaTrack, signal?: AbortSignal): Promise<TrackAnalysis | undefined> {
+  if (track.source === 'local' || !track.id) return undefined;
+  const id = encodeURIComponent(track.id);
+  const duration = track.durationSeconds ? `?duration=${Math.round(track.durationSeconds)}` : '';
+  try {
+    const response = await fetch(`/api/v1/analysis/${id}${duration}`, { signal, credentials: 'same-origin' });
+    if (!response.ok) return undefined;
+    const body = await response.json() as Partial<TrackAnalysis>;
+    if (!Number.isFinite(body.blendStart)) return undefined;
+    return {
+      bpm: Number.isFinite(body.bpm) ? body.bpm : undefined,
+      blendStart: body.blendStart!,
+      outroStart: Number.isFinite(body.outroStart) ? body.outroStart : undefined,
+      duration: Number.isFinite(body.duration) ? body.duration! : track.durationSeconds ?? 0,
+    };
+  } catch {
+    return undefined;
+  }
 }

@@ -12,6 +12,16 @@ export interface TrackProfile {
   energy?: Float32Array;
   /** Estimated tempo in beats per minute, when it could be measured. */
   bpm?: number;
+  /**
+   * Where the blend should start, in seconds, as measured by the server.
+   *
+   * The server analyses the complete file, so it knows where the song
+   * breathes before it ends even when the browser has not reached that
+   * part yet. This is the primary source for the blend point.
+   */
+  blendStart?: number;
+  /** Where the final outro or silence begins, in seconds. */
+  outroStart?: number;
 }
 
 const MIN_BLEND_SECONDS = 3;
@@ -42,6 +52,13 @@ function chooseTransitionPoint(duration: number, profile: TrackProfile, settings
   const windowStart = Math.max(0, duration - SEARCH_WINDOW_SECONDS);
   const energy = profile.energy;
   const beat = beatSeconds(profile.bpm);
+
+  // The server measured the whole track, so its blend point is the best
+  // answer: it knows where the song actually breathes before the end.
+  if (Number.isFinite(profile.blendStart) && profile.blendStart! > 0) {
+    const measured = profile.blendStart!;
+    if (measured < duration - 0.5) return measured;
+  }
 
   if (!energy || energy.length < 4) {
     // Without an energy profile, land on the beat when the tempo is known.

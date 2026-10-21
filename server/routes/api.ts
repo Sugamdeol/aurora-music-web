@@ -14,6 +14,7 @@ import {
 import { isAllowedMediaUrl, type AudioExtractor, type AudioQuality } from '../services/ytdlp.js';
 import { audioContentType, cachedAudio, serveCachedAudio } from '../services/audioCache.js';
 import { romanizeLyrics, LYRIC_LANGUAGES } from '../services/romanization.js';
+import { analyzeTrack } from '../services/audioAnalysis.js';
 import { fetchLyrics } from '../services/lyrics.js';
 import { generateMusicIdea } from '../services/ai.js';
 import { rerankMusicCandidates } from '../services/typesafe.js';
@@ -436,7 +437,7 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
       const value = typeof req.query[key] === 'string' ? (req.query[key] as string).trim() : '';
       return value.slice(0, maximum);
     };
-    const options = parseWith(z.object({ source: z.enum(['auto', 'YouLyPlus', 'Paxsenix', 'Unison', 'BetterLyrics', 'SimpMusic', 'LRCLIB', 'YouTube Music']).default('auto'), language: z.enum(LYRIC_LANGUAGES).default('auto') }), req.query);
+    const options = parseWith(z.object({ source: z.enum(['auto', 'YouLyPlus', 'BetterLyrics', 'LRCLIB', 'Unison', 'Lyrics.ovh', 'YouTube Music']).default('auto'), language: z.enum(LYRIC_LANGUAGES).default('auto') }), req.query);
     const durationValue = Number(req.query.duration);
     const result = await fetchLyrics(music, {
       id,
@@ -577,6 +578,21 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
       console.error('Prefetch failed:', error instanceof Error ? error.message : String(error));
       res.set('Cache-Control', 'no-store').status(204).end();
     }
+  }));
+
+  // Audio analysis for Auto Mix: the tempo and the point where the song
+  // breathes before it ends. The server measures the complete track, so
+  // the blend is placed musically instead of on a fixed timer.
+  router.get('/analysis/:id', limiter(120, 15 * 60_000), asyncHandler(async (req, res) => {
+    const { id } = parseWith(trackParamsSchema, req.params);
+    const durationValue = Number(req.query.duration);
+    const duration = Number.isFinite(durationValue) && durationValue > 0 ? durationValue : undefined;
+    const analysis = await analyzeTrack(id, duration);
+    if (!analysis) {
+      res.set('Cache-Control', 'no-store').status(204).end();
+      return;
+    }
+    res.set('Cache-Control', 'private, max-age=900').json(analysis);
   }));
 
   // Full-track download: same resolved audio as playback, delivered as an

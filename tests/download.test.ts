@@ -25,7 +25,7 @@ describe('track download', () => {
       headers: { 'Content-Type': 'audio/mp4', 'Content-Length': '3' },
     })));
     const { server } = app();
-    const result = await request(server).get('/api/v1/download/mhSpdlCXU7M?title=Night%20Drive&artist=Asha%20Bhosle');
+    const result = await request(server).get('/api/v1/download/testdl000000001?title=Night%20Drive&artist=Asha%20Bhosle');
     expect(result.status).toBe(200);
     expect(result.headers['content-type']).toBe('audio/mp4');
     expect(result.headers['content-length']).toBe('3');
@@ -42,7 +42,7 @@ describe('track download', () => {
       headers: { 'Content-Type': 'audio/mp4' },
     })));
     const { server } = app();
-    const hostile = await request(server).get('/api/v1/download/mhSpdlCXU7M').query({ title: '..\\..\\etc "pass" <x>', artist: '' });
+    const hostile = await request(server).get('/api/v1/download/testdl000000001').query({ title: '..\\..\\etc "pass" <x>', artist: '' });
     expect(hostile.status).toBe(200);
     const disposition = hostile.headers['content-disposition'];
     expect(disposition).toContain('attachment');
@@ -50,8 +50,8 @@ describe('track download', () => {
     expect(disposition).not.toContain('"pass"');
     expect(disposition).toContain('.m4a');
 
-    const bare = await request(server).get('/api/v1/download/mhSpdlCXU7M');
-    expect(bare.headers['content-disposition']).toContain('mhSpdlCXU7M.m4a');
+    const bare = await request(server).get('/api/v1/download/testdl000000001');
+    expect(bare.headers['content-disposition']).toContain('testdl000000001.m4a');
   });
 
   it('passes the requested quality to the extractor', async () => {
@@ -60,8 +60,8 @@ describe('track download', () => {
       headers: { 'Content-Type': 'audio/mp4' },
     })));
     const { audio, server } = app();
-    await request(server).get('/api/v1/download/mhSpdlCXU7M?quality=high&title=X');
-    expect(audio.getAudioFormat).toHaveBeenCalledWith('mhSpdlCXU7M', false, 'high');
+    await request(server).get('/api/v1/download/testdl000000001?quality=high&title=X');
+    expect(audio.getAudioFormat).toHaveBeenCalledWith('testdl000000001', false, 'high');
   });
 
   it('invalidates a stale format and retries once before failing', async () => {
@@ -70,19 +70,19 @@ describe('track download', () => {
       .mockResolvedValueOnce(new Response(new Uint8Array([4, 5]), { status: 200, headers: { 'Content-Type': 'audio/mp4' } }));
     vi.stubGlobal('fetch', fetch);
     const { audio, server } = app();
-    const result = await request(server).get('/api/v1/download/mhSpdlCXU7M?title=Retry');
+    const result = await request(server).get('/api/v1/download/testdl000000001?title=Retry');
     expect(result.status).toBe(200);
     expect(result.body).toEqual(Buffer.from([4, 5]));
-    expect(audio.invalidate).toHaveBeenCalledWith('mhSpdlCXU7M');
-    expect(audio.getAudioFormat).toHaveBeenNthCalledWith(1, 'mhSpdlCXU7M', false, 'auto');
-    expect(audio.getAudioFormat).toHaveBeenNthCalledWith(2, 'mhSpdlCXU7M', true, 'auto');
+    expect(audio.invalidate).toHaveBeenCalledWith('testdl000000001');
+    expect(audio.getAudioFormat).toHaveBeenNthCalledWith(1, 'testdl000000001', false, 'auto');
+    expect(audio.getAudioFormat).toHaveBeenNthCalledWith(2, 'testdl000000001', true, 'auto');
   });
 
   it('surfaces an upstream failure as an error instead of an empty file', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('nope', { status: 403 })));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { server } = app();
-    const result = await request(server).get('/api/v1/download/mhSpdlCXU7M?title=X');
+    const result = await request(server).get('/api/v1/download/testdl000000001?title=X');
     expect(result.status).toBe(502);
     expect(result.body.error.code).toBe('UPSTREAM_ERROR');
     vi.restoreAllMocks();

@@ -34,10 +34,10 @@ describe('song extraction', () => {
       callback(null, JSON.stringify({ url: 'https://r1.googlevideo.com/audio', ext: 'm4a' }), '');
     });
     const extractor = new YtDlpService();
-    await extractor.getAudioFormat('mhSpdlCXU7M', false, 'data-saver');
+    await extractor.getAudioFormat('testst000000001', false, 'data-saver');
     expect((execFile.mock.calls[0][1] as string[]).slice(-3, -2)).toEqual([formatSelector('data-saver')]);
-    await extractor.getAudioFormat('mhSpdlCXU7M', false, 'data-saver');
-    await extractor.getAudioFormat('mhSpdlCXU7M', false, 'high');
+    await extractor.getAudioFormat('testst000000001', false, 'data-saver');
+    await extractor.getAudioFormat('testst000000001', false, 'high');
     expect(execFile).toHaveBeenCalledTimes(2);
   });
   it('uses IPv4, bounded network retries and an explicit JavaScript runtime', async () => {
@@ -45,13 +45,13 @@ describe('song extraction', () => {
       callback(null, JSON.stringify({ url: 'https://r1.googlevideo.com/audio', ext: 'm4a' }), '');
     });
     const extractor = new YtDlpService();
-    expect((await extractor.getAudioFormat('mhSpdlCXU7M')).mimeType).toBe('audio/mp4');
+    expect((await extractor.getAudioFormat('testst000000001')).mimeType).toBe('audio/mp4');
     const args = execFile.mock.calls[0][1] as string[];
     expect(args).toContain('--force-ipv4');
     expect(args.slice(args.indexOf('--socket-timeout'), args.indexOf('--socket-timeout') + 2)).toEqual(['--socket-timeout', '10']);
     expect(args).toContain('--js-runtimes');
     expect(args).not.toContain('--remote-components');
-    await extractor.getAudioFormat('mhSpdlCXU7M');
+    await extractor.getAudioFormat('testst000000001');
     expect(execFile).toHaveBeenCalledTimes(1);
   });
   it('lets a tapped song interrupt an unrelated background warm', async () => {
@@ -103,22 +103,22 @@ describe('stream recovery', () => {
     }));
     vi.stubGlobal('fetch', fetch);
     const { audio, server } = app();
-    const result = await request(server).get('/api/v1/stream/mhSpdlCXU7M').set('Range', 'bytes=0-2');
+    const result = await request(server).get('/api/v1/stream/testst000000001').set('Range', 'bytes=0-2');
     expect(result.status).toBe(206);
     expect(result.headers['content-range']).toBe('bytes 0-2/300');
     expect(result.headers['content-type']).toBe('audio/mp4');
     expect(result.headers['cache-control']).toBe('no-store');
     expect(fetch).toHaveBeenCalledTimes(2);
     expect((fetch.mock.calls[1][1].headers as Headers).get('Range')).toBe('bytes=0-2');
-    expect(audio.invalidate).toHaveBeenCalledWith('mhSpdlCXU7M');
-    expect(audio.getAudioFormat).toHaveBeenLastCalledWith('mhSpdlCXU7M', true, 'auto');
+    expect(audio.invalidate).toHaveBeenCalledWith('testst000000001');
+    expect(audio.getAudioFormat).toHaveBeenLastCalledWith('testst000000001', true, 'auto');
   });
 
   it('returns an error for an upstream abort instead of leaving the browser hanging', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('Connection aborted', 'AbortError')));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { server } = app();
-    const result = await request(server).get('/api/v1/stream/mhSpdlCXU7M');
+    const result = await request(server).get('/api/v1/stream/testst000000001');
     expect(result.status).toBe(502);
     expect(result.body.error.code).toBe('UPSTREAM_ERROR');
     vi.restoreAllMocks();

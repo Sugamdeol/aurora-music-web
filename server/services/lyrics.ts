@@ -30,16 +30,25 @@ interface Candidate extends LyricsResult { priority: number }
 const CACHE_MS = 15 * 60_000;
 const lyricsCache = new Map<string, { result: LyricsResult; until: number }>();
 const lyricsInFlight = new Map<string, Promise<LyricsResult | undefined>>();
-const lyricsQueue = new TaskQueue(1);
+// Lyrics lookups run one at a time so a burst of requests does not hammer
+// the community sources. The concurrency is not one, because one slow
+// source must not block the others for the whole request.
+const lyricsQueue = new TaskQueue(3);
 
 const YOU_LY_PLUS = [
   'https://lyricsplus.prjktla.my.id',
+  'https://lyricsplus.prjktla.workers.dev',
   'https://lyricsplus.atomix.one',
   'https://lyricsplus.binimum.org',
-  'https://lyricsplus.prjktla.workers.dev',
   'https://lyricsplus-seven.vercel.app',
   'https://lyrics-plus-backend.vercel.app',
 ];
+
+const BROWSER_HEADERS = {
+  accept: 'application/json, text/plain, */*',
+  'accept-language': 'en-US,en;q=0.9',
+  'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+};
 
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -56,6 +65,21 @@ function timestampSeconds(value: string): number | undefined {
     ? Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2])
     : parts.length === 2 ? Number(parts[0]) * 60 + Number(parts[1]) : Number(clean);
   return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined;
+}
+
+/**
+ * Reads a time that may be in seconds, milliseconds, or a timestamp
+ * string. Providers disagree on the unit, so it is detected from the
+ * magnitude instead of being assumed.
+ */
+function timeValue(raw: unknown): number | undefined {
+  if (typeof raw === 'number') return Number.isFinite(raw) ? (raw > 1000 ? raw / 1000 : raw) : undefined;
+  if (typeof raw === 'string') {
+    const numeric = Number(raw);
+    if (Number.isFinite(numeric)) return numeric > 1000 ? numeric / 1000 : numeric;
+    return timestampSeconds(raw);
+  }
+  return undefined;
 }
 
 function parseTextLyrics(raw: string): TimedLyric[] {
@@ -128,9 +152,16 @@ function candidate(provider: string, value: unknown, priority: number): Candidat
 }
 
 async function getJson(url: URL, timeoutMs = 8_000): Promise<unknown> {
-  const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: 'application/json', 'user-agent': 'AuroraMusic/1.0' } });
+  const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), headers: { ...BROWSER_HEADERS } });
   if (!response.ok) throw new Error(`Lyrics source returned ${response.status}`);
   return response.json() as Promise<unknown>;
+}
+
+/** Same as getJson but returns the raw text, for TTML and LRC bodies. */
+async function getText(url: URL, timeoutMs = 8_000): Promise<string> {
+  const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), headers: { ...BROWSER_HEADERS } });
+  if (!response.ok) throw new Error(`Lyrics source returned ${response.status}`);
+  return response.text();
 }
 
 function infoParams(url: URL, info: LyricsTrackInfo): void {
@@ -141,61 +172,101 @@ function infoParams(url: URL, info: LyricsTrackInfo): void {
   url.searchParams.set('id', info.id);
 }
 
+/**
+ * YouLyPlus returns one row per line, with the time in milliseconds and a
+ * syllable list for word level timing.
+ */
+function youLyPlusRows(value: unknown): TimedLyric[] {
+  const rows: TimedLyric[] = [];
+  const list = Array.isArray(value) ? value : [];
+  for (const entry of list) {
+    const item = record(entry);
+    const text = String(item.text ?? '').trim();
+    if (!text) continue;
+    const rawTime = item.time;
+    // The time is in milliseconds here, unlike the other providers.
+    const time = typeof rawTime === 'number' && Number.isFinite(rawTime) ? rawTime / 1000 : timeValue(rawTime);
+    rows.push({ ...(time === undefined ? {} : { time }), text });
+  }
+  return rows;
+}
+
 async function youLyPlus(info: LyricsTrackInfo): Promise<Candidate | undefined> {
   const responses = await Promise.allSettled(YOU_LY_PLUS.map(async (host) => {
     const url = new URL('/v2/lyrics/get', host);
     infoParams(url, info);
     const response = record(await getJson(url));
+    const raw = response.lyrics ?? response.syncedLyrics ?? response.plainLyrics;
+    if (Array.isArray(raw)) {
+      const rows = youLyPlusRows(raw);
+      if (rows.length) return { provider: 'YouLyPlus', lines: rows, synced: rows.some((row) => row.time !== undefined), priority: 0 };
+    }
     return candidate('YouLyPlus', response.syncedLyrics ?? response.lyrics ?? response.plainLyrics, 0);
   }));
   const found = responses.flatMap((response) => response.status === 'fulfilled' && response.value ? [response.value] : []);
   return found.find((item) => item.synced) ?? found[0];
 }
 
-async function paxsenix(info: LyricsTrackInfo): Promise<Candidate | undefined> {
-  const search = new URL('/apple-music/search', 'https://lyrics.paxsenix.org');
-  search.searchParams.set('q', `${info.title} ${info.artist}`);
-  const results = await getJson(search);
-  if (!Array.isArray(results)) return undefined;
-  const normalizedTitle = info.title.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ');
-  const normalizedArtist = info.artist.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ');
-  const ranked = results.map((entry) => record(entry)).sort((a, b) => {
-    const score = (item: Record<string, unknown>) => {
-      const title = String(item.trackName ?? item.songName ?? '').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ');
-      const artist = String(item.artistName ?? '').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ');
-      const duration = Number(item.duration ?? 0);
-      const durationSeconds = Number(item.duration ?? 0) > 10_000 ? Number(item.duration) / 1000 : Number(item.duration ?? 0);
-      return Number(title === normalizedTitle || title.includes(normalizedTitle) || normalizedTitle.includes(title)) * 4
-        + Number(artist.includes(normalizedArtist) || normalizedArtist.includes(artist)) * 3
-        - (info.duration && durationSeconds ? Math.min(3, Math.abs(durationSeconds - info.duration) / 5) : 0);
-    };
-    return score(b) - score(a);
-  }).slice(0, 4);
-  const lyrics = await Promise.allSettled(ranked.map(async (item) => {
-    const url = new URL('/apple-music/lyrics', 'https://lyrics.paxsenix.org');
-    url.searchParams.set('id', String(item.id ?? ''));
-    const data = record(await getJson(url));
-    return candidate('Paxsenix', data.ttmlContent ?? data.elrcMultiPerson ?? data.elrc ?? data.plain ?? data.content, 1);
-  }));
-  const found = lyrics.flatMap((item) => item.status === 'fulfilled' && item.value ? [item.value] : []);
-  return found.find((item) => item.synced) ?? found[0];
-}
 
+/**
+ * Unison exposes a search endpoint that returns candidate tracks with
+ * their video id, and a lookup endpoint that returns the lyrics for one
+ * video id. The candidate has to be picked by title, artist and length
+ * before the lyrics are fetched.
+ */
 async function unison(info: LyricsTrackInfo): Promise<Candidate | undefined> {
-  const url = new URL('/lyrics', 'https://unison.boidu.dev');
-  url.searchParams.set('v', info.id);
-  let response = record(await getJson(url));
-  let data = record(response.data);
-  if (!response.success || !data.lyrics) {
-    const search = new URL('/lyrics', 'https://unison.boidu.dev');
-    search.searchParams.set('song', info.title);
-    search.searchParams.set('artist', info.artist);
-    if (info.album) search.searchParams.set('album', info.album);
-    if (info.duration) search.searchParams.set('duration', String(Math.round(info.duration)));
-    response = record(await getJson(search));
-    data = record(response.data);
+  const host = 'https://unison.boidu.dev';
+
+  // The direct lookup works when the video id is known.
+  const byVideo = new URL('/lyrics', host);
+  byVideo.searchParams.set('v', info.id);
+  try {
+    const response = record(await getJson(byVideo));
+    const data = record(response.data);
+    const found = candidate('Unison', data.lyrics, 3);
+    if (found) return found;
+  } catch { /* This track has no lyrics here. */ }
+
+  // Otherwise search for the song and pick the best matching recording.
+  const search = new URL('/lyrics/search', host);
+  search.searchParams.set('q', `${info.title} ${info.artist}`);
+  let results: unknown[];
+  try {
+    const response = record(await getJson(search));
+    results = Array.isArray(response.data) ? response.data as unknown[] : [];
+  } catch {
+    return undefined;
   }
-  return candidate('Unison', data.lyrics, 2);
+  const candidates = results.map(record).filter((item) => item.videoId);
+  if (!candidates.length) return undefined;
+
+  const normalizedTitle = info.title.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const normalizedArtist = info.artist.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const score = (item: Record<string, unknown>): number => {
+    const song = String(item.song ?? '').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    const artist = String(item.artist ?? '').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    const duration = Number(item.duration ?? 0);
+    let value = 0;
+    if (song === normalizedTitle) value += 6;
+    else if (song.includes(normalizedTitle) || normalizedTitle.includes(song)) value += 3;
+    if (artist.includes(normalizedArtist) || normalizedArtist.includes(artist)) value += 4;
+    if (info.duration && duration) value -= Math.min(6, Math.abs(duration - info.duration) / 5);
+    return value;
+  };
+  const ranked = candidates.map((item) => ({ item, value: score(item) })).sort((a, b) => b.value - a.value);
+  if (!ranked.length || ranked[0]!.value <= 0) return undefined;
+
+  for (const { item } of ranked.slice(0, 3)) {
+    const url = new URL('/lyrics', host);
+    url.searchParams.set('v', String(item.videoId));
+    try {
+      const response = record(await getJson(url));
+      const data = record(response.data);
+      const found = candidate('Unison', data.lyrics, 3);
+      if (found) return found;
+    } catch { /* Try the next candidate. */ }
+  }
+  return undefined;
 }
 
 async function betterLyrics(info: LyricsTrackInfo): Promise<Candidate | undefined> {
@@ -208,36 +279,70 @@ async function betterLyrics(info: LyricsTrackInfo): Promise<Candidate | undefine
   return candidate('BetterLyrics', response.ttml, 3);
 }
 
-async function simpMusic(info: LyricsTrackInfo): Promise<Candidate | undefined> {
-  const roots = ['https://api-lyrics.simpmusic.org/v1/', 'https://vivi-yt-music-server.onrender.com/v1/'];
-  for (const root of roots) {
-    try {
-      const response = record(await getJson(new URL(encodeURIComponent(info.id), root)));
-      const tracks = Array.isArray(response.data) ? response.data.map(record) : [];
-      const matching = tracks.sort((a, b) => {
-        const durationA = Number(a.durationSeconds ?? 0); const durationB = Number(b.durationSeconds ?? 0);
-        return (info.duration ? Math.abs(durationA - info.duration) : 0) - (info.duration ? Math.abs(durationB - info.duration) : 0);
-      });
-      const result = matching.map((item) => candidate('SimpMusic', item, 4)).find(Boolean);
-      if (result) return result;
-    } catch { /* Try the next community mirror. */ }
-  }
-  return undefined;
-}
 
+/**
+ * LRCLIB is the most reliable open source: it serves LRC files with
+ * timestamps for most popular songs. The exact-match endpoint is tried
+ * first, because the search endpoint often returns a different
+ * recording of the same song.
+ */
 async function lrclib(info: LyricsTrackInfo): Promise<Candidate | undefined> {
-  const url = new URL('/api/search', 'https://lrclib.net');
-  url.searchParams.set('track_name', info.title);
-  url.searchParams.set('artist_name', info.artist.split(/,| feat\.? | ft\.? /i)[0]!.trim());
-  if (info.album) url.searchParams.set('album_name', info.album);
-  const response = await getJson(url);
+  const artist = info.artist.split(/,| feat\.? | ft\.? /i)[0]!.trim();
+  const exact = new URL('/api/get', 'https://lrclib.net');
+  exact.searchParams.set('track_name', info.title);
+  exact.searchParams.set('artist_name', artist);
+  if (info.album) exact.searchParams.set('album_name', info.album);
+  try {
+    const response = record(await getJson(exact));
+    const found = candidate('LRCLIB', response.syncedLyrics ?? response.plainLyrics, 2);
+    if (found) return found;
+  } catch { /* Fall through to the search endpoint. */ }
+
+  const search = new URL('/api/search', 'https://lrclib.net');
+  search.searchParams.set('track_name', info.title);
+  search.searchParams.set('artist_name', artist);
+  if (info.album) search.searchParams.set('album_name', info.album);
+  const response = await getJson(search);
   if (!Array.isArray(response)) return undefined;
   const tracks = response.map(record).filter((item) => item.syncedLyrics || item.plainLyrics);
+  // Prefer the recording that matches the length of the track being played.
   tracks.sort((a, b) => {
-    const durationA = Number(a.duration ?? 0); const durationB = Number(b.duration ?? 0);
+    const durationA = Number(a.duration ?? 0);
+    const durationB = Number(b.duration ?? 0);
     return (info.duration ? Math.abs(durationA - info.duration) : 0) - (info.duration ? Math.abs(durationB - info.duration) : 0);
   });
-  return tracks.map((item) => candidate('LRCLIB', item.syncedLyrics ?? item.plainLyrics, 5)).find(Boolean);
+  // A synced version of the right recording beats a plain one.
+  const synced = tracks.find((item) => item.syncedLyrics);
+  const chosen = synced ?? tracks[0];
+  if (!chosen) return undefined;
+  return candidate('LRCLIB', chosen.syncedLyrics ?? chosen.plainLyrics, 2);
+}
+
+/**
+ * Lyrics.ovh serves plain lyrics with no timestamps. It is the fallback
+ * that still gives the listener the words when nothing else works.
+ */
+async function lyricsOvh(info: LyricsTrackInfo): Promise<Candidate | undefined> {
+  const artist = info.artist.split(/,| feat\.? | ft\.? /i)[0]!.trim();
+  const url = new URL(`/v1/${encodeURIComponent(artist)}/${encodeURIComponent(info.title)}`, 'https://api.lyrics.ovh');
+  const body = await getText(url);
+  if (!body.trim()) return undefined;
+  // The endpoint answers with JSON, but some mirrors answer with plain
+  // text, so both are handled.
+  const text = (() => {
+    const trimmed = body.trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return trimmed;
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      const item = record(parsed);
+      return String(item.lyrics ?? item.text ?? item.plain ?? trimmed);
+    } catch {
+      return trimmed;
+    }
+  })();
+  const rows = parseTextLyrics(text);
+  if (!rows.length) return undefined;
+  return { provider: 'Lyrics.ovh', lines: rows, synced: false, priority: 5 };
 }
 
 export async function fetchLyrics(music: MusicProvider, info: LyricsTrackInfo): Promise<LyricsResult | undefined> {
@@ -252,14 +357,39 @@ export async function fetchLyrics(music: MusicProvider, info: LyricsTrackInfo): 
 }
 
 async function fetchLyricsUncached(music: MusicProvider, info: LyricsTrackInfo): Promise<LyricsResult | undefined> {
-
+  // The order reflects how reliable each source is: the ones that return
+  // word level timings come first, the plain-text fallback comes last.
   const sources: Record<string, () => Promise<Candidate | undefined>> = {
-    YouLyPlus: () => youLyPlus(info), Paxsenix: () => paxsenix(info), Unison: () => unison(info), BetterLyrics: () => betterLyrics(info), SimpMusic: () => simpMusic(info), LRCLIB: () => lrclib(info),
-    'YouTube Music': () => Promise.race([music.getLyrics(info.id).then((value) => candidate('YouTube Music', record(value).description ?? value, 6)), new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 9000))]),
+    YouLyPlus: () => youLyPlus(info),
+    BetterLyrics: () => betterLyrics(info),
+    LRCLIB: () => lrclib(info),
+    Unison: () => unison(info),
+    'Lyrics.ovh': () => lyricsOvh(info),
+    'YouTube Music': () => Promise.race([
+      music.getLyrics(info.id).then((value) => {
+        // The YouTube lyrics response carries the plain text in
+        // "description", which is a Text object with a "text" field, not a
+        // string. firstLyrics() looks for named keys inside a response
+        // object, so the text has to be handed over directly.
+        const response = record(value);
+        const description = response.description;
+        const text = typeof description === 'string'
+          ? description
+          : typeof record(description).text === 'string' ? record(description).text as string : '';
+        if (text.trim()) return candidate('YouTube Music', text, 6);
+        return candidate('YouTube Music', value, 6);
+      }),
+      // The YouTube client has to start up before the first lookup, and the
+      // catalog queue can be busy, so this needs more room than the plain
+      // HTTP sources. Losing the race here would silently drop the only
+      // source that serves YouTube's own lyrics.
+      new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 20_000)),
+    ]),
   };
   const tasks = info.source && info.source !== 'auto' ? [sources[info.source]!()] : Object.values(sources).map((load) => load());
   const settled = await Promise.allSettled(tasks);
   const found = settled.flatMap((result) => result.status === 'fulfilled' && result.value ? [result.value] : []).sort((a, b) => a.priority - b.priority);
+  // A synced version always wins over a plain one, whatever its priority.
   const winner = found.find((item) => item.synced) ?? found[0];
   if (!winner) return undefined;
   const { lines, approximate } = await romanizeLyrics(winner.lines, info.language);

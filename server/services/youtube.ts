@@ -46,6 +46,17 @@ export class YouTubeMusicService implements MusicProvider {
     return this.clientPromise;
   }
 
+  /**
+   * Starts the YouTube client up front.
+   *
+   * The first request otherwise pays for the client start, and lyrics look
+   * have a timeout, so the very first lyrics request of a session could
+   * lose the race and come back empty.
+   */
+  warm(): void {
+    void this.client().catch(() => undefined);
+  }
+
   async getHome(): Promise<unknown> {
     return catalogQueue.run(async () => (await this.client()).music.getHomeFeed());
   }

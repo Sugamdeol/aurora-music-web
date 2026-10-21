@@ -1,5 +1,5 @@
 import type { LyricLine } from '../domain/media';
-export const LYRIC_SOURCES = ['auto', 'YouLyPlus', 'Paxsenix', 'Unison', 'BetterLyrics', 'SimpMusic', 'LRCLIB', 'YouTube Music', 'custom'] as const;
+export const LYRIC_SOURCES = ['auto', 'YouLyPlus', 'BetterLyrics', 'LRCLIB', 'Unison', 'Lyrics.ovh', 'YouTube Music', 'custom'] as const;
 export const LYRIC_LANGUAGES = [['auto','Detect language'],['hindi','Hindi'],['punjabi','Punjabi'],['marathi','Marathi'],['gujarati','Gujarati'],['bengali','Bengali / Assamese'],['tamil','Tamil'],['telugu','Telugu'],['kannada','Kannada'],['malayalam','Malayalam'],['odia','Odia'],['japanese','Japanese'],['mandarin','Chinese · Mandarin'],['cantonese','Chinese · Cantonese'],['korean','Korean'],['thai','Thai'],['cyrillic','Cyrillic'],['arabic','Arabic / Urdu'],['hebrew','Hebrew'],['other','Other scripts']] as const;
 export interface LyricPreferences { source: string; language: string; customText: string; customRomanized: string; customLines: LyricLine[]; approximate?: boolean }
 export const DEFAULT_LYRIC_PREFERENCES: LyricPreferences = { source: 'auto', language: 'auto', customText: '', customRomanized: '', customLines: [] };

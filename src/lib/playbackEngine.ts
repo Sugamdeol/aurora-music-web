@@ -3,7 +3,7 @@ import { useRecommendationStore } from '../store/recommendations';
 import type { MediaTrack } from '../domain/media';
 import { formatDuration } from '../domain/media';
 import { db } from './db';
-import { api, streamCandidates, prefetchTrack } from './api';
+import { api, streamCandidates, prefetchTrack, fetchTrackAnalysis, type TrackAnalysis } from './api';
 import { useLibraryStore } from '../store/library';
 import { usePlaybackStore } from '../store/playback';
 import { EqualizerGraph } from './equalizer';
@@ -32,10 +32,12 @@ export class PlaybackEngine {
   private preparationRevision = 0;
   /** Measured energy shape per track, used to place Auto Mix blends. */
   private profiles = new Map<string, EnergyProfile>();
+  /** The server's analysis of a track, which knows the whole song. */
+  private serverAnalysis = new Map<string, TrackAnalysis>();
   private failedPreparationKey = '';
   private prepareRetryAt = 0;
   private startingMix = false;
-  private fading?: { audio: HTMLAudioElement; objectUrl?: string; start: number; duration: number; outgoingGain: number; incomingGain: number };
+  private fading?: { audio: HTMLAudioElement; objectUrl?: string; start: number; duration: number; outgoingGain: number; incomingGain: number; startedAt: number };
   private fadeTimer?: number;
   private compressor?: DynamicsCompressorNode;
   private equalizer?: EqualizerGraph;
@@ -134,6 +136,7 @@ export class PlaybackEngine {
         this.handledTrackId = track.id;
         this.lastListenPosition = this.audio.currentTime || 0;
         this.analyseTrack(track, this.audio);
+        void this.loadServerAnalysis(track);
         void useLibraryStore.getState().recordPlay(track).then((id) => {
           if (store().currentTrack?.id === track.id) {
             this.historyRecordId = id;
@@ -228,8 +231,11 @@ export class PlaybackEngine {
     const liveState = usePlaybackStore.getState();
     if (liveState.isPlaying) void this.ensureUpcoming();
     void this.prepareNext();
-    if (Math.abs((this.audio.currentTime || 0) - liveState.position) > 1.25 && Number.isFinite(liveState.position)) {
-      this.cancelFade();
+    // Do not fight the player's clock while a blend is running: the store
+    // reports the incoming track's position while the fade is still in
+    // progress, and seeking on that difference used to cancel the blend
+    // halfway through, which is what made Auto Mix sound like a hard cut.
+    if (!this.fading && Math.abs((this.audio.currentTime || 0) - liveState.position) > 1.25 && Number.isFinite(liveState.position)) {
       try { this.audio.currentTime = liveState.position; this.lastListenPosition = liveState.position; } catch { /* metadata may not be ready yet */ }
     }
     if (liveState.isPlaying && this.audio.paused && this.audio.src) {
@@ -417,7 +423,14 @@ export class PlaybackEngine {
     // of the track: the transition is placed where the song breathes.
     const remaining = (this.audio.duration - this.audio.currentTime) / state.playbackRate;
     const untilPlan = (plan.startAt - this.audio.currentTime) / state.playbackRate;
-    if (untilPlan > 0) return;
+    // The blend starts at the planned musical point, not at the last second
+    // of the track: the transition is placed where the song breathes.
+    //
+    // The plan can move while the track is playing, because the server
+    // analysis arrives after the track starts. When that happens the blend
+    // point is in the past, so the transition must start right away instead
+    // of waiting for a point that already passed.
+    if (untilPlan > 0.15) return;
     const seconds = Math.min(plan.seconds, remaining);
     if (!seconds || remaining < .2 || prepared.audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) return;
     const outgoing = this.audio;
@@ -444,7 +457,7 @@ export class PlaybackEngine {
       this.historyRecordId = undefined;
       this.pendingListenSeconds = 0;
       this.lastListenPosition = undefined;
-      this.fading = { audio: outgoing, objectUrl: outgoingUrl, start: this.audio.currentTime, duration: Math.min(seconds, remaining) * state.playbackRate, outgoingGain: 1, incomingGain: 0 };
+      this.fading = { audio: outgoing, objectUrl: outgoingUrl, start: this.audio.currentTime, duration: Math.min(seconds, remaining) * state.playbackRate, outgoingGain: 1, incomingGain: 0, startedAt: performance.now() };
       const latest = usePlaybackStore.getState();
       this.currentKey = `${prepared.track.id}:${latest.sourceRevision + 1}`;
       const history = latest.shuffle && latest.currentTrack ? [...latest.shuffleHistory, latest.currentTrack.id].slice(-100) : latest.shuffleHistory;
@@ -456,7 +469,14 @@ export class PlaybackEngine {
       this.fadeTimer = window.setInterval(() => {
         const fade = this.fading;
         if (!fade) return;
-        const progress = (this.audio.currentTime - fade.start) / fade.duration;
+        // The blend is driven by the incoming deck's play head, because it
+        // is the track the listener is now hearing. The wall clock is a
+        // fallback: if the incoming stream stalls while buffering, the
+        // blend still finishes instead of freezing the outgoing track at a
+        // half faded volume.
+        const byPosition = (this.audio.currentTime - fade.start) / fade.duration;
+        const byClock = (performance.now() - fade.startedAt) / 1000 / fade.duration;
+        const progress = Math.max(byPosition, byClock);
         const [outgoingGain, incomingGain] = mixGains(progress);
         fade.outgoingGain = outgoingGain;
         fade.incomingGain = incomingGain;
@@ -579,11 +599,38 @@ export class PlaybackEngine {
   }
 
   /**
+   * Loads the server's analysis of a track.
+   *
+   * The server measures the whole file, so it knows the tempo and where the
+   * song breathes before it ends. Without it the blend can only be guessed
+   * from the part the browser has already heard, which is why the outro
+   * break was never found.
+   */
+  private async loadServerAnalysis(track: MediaTrack): Promise<void> {
+    if (track.source === 'local' || !track.id || this.serverAnalysis.has(track.id)) return;
+    const analysis = await fetchTrackAnalysis(track);
+    if (!analysis) return;
+    this.serverAnalysis.set(track.id, analysis);
+    // The blend point may have moved, so the plan has to be re-checked.
+    void this.maybeTransition();
+  }
+
+  /**
    * The measured shape of a track, used to place a blend musically.
    * Falls back to an empty profile when the track has not been analysed.
    */
-  private profileFor(track: MediaTrack): { energy?: Float32Array; bpm?: number } {
+  private profileFor(track: MediaTrack): { energy?: Float32Array; bpm?: number; blendStart?: number; outroStart?: number } {
+    const server = this.serverAnalysis.get(track.id);
     const profile = this.profiles.get(track.id);
+    if (server) {
+      // The server measured the whole track, so its blend point wins.
+      return {
+        energy: profile?.energy,
+        bpm: server.bpm ?? profile?.bpm,
+        blendStart: server.blendStart,
+        outroStart: server.outroStart,
+      };
+    }
     if (!profile) return {};
     return { energy: profile.energy, bpm: profile.bpm };
   }

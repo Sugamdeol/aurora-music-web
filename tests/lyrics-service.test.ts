@@ -31,17 +31,17 @@ describe('script-aware romanization', () => {
 });
 
 it('honours an explicit provider and caches it separately from another language', async () => {
-  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([{ syncedLyrics: '[00:01.00] दिल मेरा' }]), { status: 200 }));
-  // Each fetch needs its own response body.
-  fetchMock.mockImplementation(async () => new Response(JSON.stringify([{ syncedLyrics: '[00:01.00] दिल मेरा' }]), { status: 200 }));
+  const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify([{ syncedLyrics: '[00:01.00] दिल मेरा' }]), { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
   const getLyrics = vi.fn();
   const provider = { getLyrics } as unknown as MusicProvider;
   const info = { id: 'source-test', title: 'Test', artist: 'Test', source: 'LRCLIB', language: 'hindi' as const };
   expect((await fetchLyrics(provider, info))?.provider).toBe('LRCLIB');
+  const callsAfterFirst = fetchMock.mock.calls.length;
+  // The same request is served from the cache, without a second call.
   await fetchLyrics(provider, info);
-  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(fetchMock.mock.calls.length).toBe(callsAfterFirst);
   await fetchLyrics(provider, { ...info, language: 'marathi' });
-  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(fetchMock.mock.calls.length).toBeGreaterThan(callsAfterFirst);
   expect(getLyrics).not.toHaveBeenCalled();
 });

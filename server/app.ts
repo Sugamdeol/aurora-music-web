@@ -80,6 +80,10 @@ export function createApp(options: CreateAppOptions = {}): Express {
   const production = options.production ?? process.env.NODE_ENV === 'production';
   const music = options.music ?? new YouTubeMusicService();
   const audio = options.audio ?? new YtDlpService();
+  // Start the YouTube client now, so the first request does not pay for
+  // it. Lyrics lookups have a timeout and could otherwise lose the race
+  // against the client start and come back empty.
+  if (music instanceof YouTubeMusicService) music.warm();
   const app = express();
 
   app.disable('x-powered-by');
