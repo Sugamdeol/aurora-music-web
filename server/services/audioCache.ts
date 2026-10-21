@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import { mkdir, stat, unlink } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -64,29 +64,83 @@ export function cachedAudioPath(id: string): string {
   return path.join(CACHE_DIR, `${id.replace(/[^A-Za-z0-9_-]/g, '')}.audio`);
 }
 
+/**
+ * The content type of a cached file.
+ *
+ * yt-dlp usually downloads AAC audio in an MP4 container. Serving that as
+ * audio/mpeg makes the browser try to decode AAC as MP3, and playback
+ * silently never starts. The type has to match the real container, so the
+ * cached file keeps the extension it was downloaded with.
+ */
+export function audioContentType(file: string): string | undefined {
+  const ext = path.extname(file).toLowerCase();
+  if (ext === '.m4a' || ext === '.m4b' || ext === '.mp4') return 'audio/mp4';
+  if (ext === '.webm' || ext === '.opus' || ext === '.ogg') return 'audio/ogg';
+  if (ext === '.wav') return 'audio/wav';
+  if (ext === '.flac') return 'audio/flac';
+  if (ext === '.mp3') return 'audio/mpeg';
+  return undefined;
+}
+
+/** The container extensions a cached track can have. */
+const CONTAINERS = ['.m4a', '.mp4', '.webm', '.opus', '.ogg', '.wav', '.flac', '.mp3'];
+
+/** Every cached file for an id, whichever container it was stored in. */
+function candidatePaths(id: string): string[] {
+  const base = id.replace(/[^A-Za-z0-9_-]/g, '');
+  const paths = CONTAINERS.map((ext) => path.join(CACHE_DIR, `${base}${ext}`));
+  paths.push(path.join(CACHE_DIR, `${base}.audio`));
+  return paths;
+}
+
 export async function cachedAudio(id: string): Promise<{ file: string; bytes: number } | undefined> {
   const entry = entryFor(id);
-  if (!entry) return undefined;
-  try {
-    const info = await stat(entry.file);
-    entry.touchedAt = Date.now();
-    return { file: entry.file, bytes: info.size };
-  } catch {
-    const index = entries.indexOf(entry);
-    if (index >= 0) entries.splice(index, 1);
-    return undefined;
+  if (entry) {
+    try {
+      const info = await stat(entry.file);
+      entry.touchedAt = Date.now();
+      return { file: entry.file, bytes: info.size };
+    } catch {
+      const index = entries.indexOf(entry);
+      if (index >= 0) entries.splice(index, 1);
+      return undefined;
+    }
   }
+  // The index lives in memory, so a restarted server does not know about
+  // files that are already on disk. Check the disk before declaring a miss,
+  // otherwise every restart re-downloads the whole library.
+  for (const file of candidatePaths(id)) {
+    try {
+      const info = await stat(file);
+      if (!info.isFile() || info.size === 0) continue;
+      entries.push({ id, file, bytes: info.size, touchedAt: Date.now() });
+      return { file, bytes: info.size };
+    } catch {
+      // try the next container
+    }
+  }
+  return undefined;
 }
 
 /** Registers a downloaded file in the cache and evicts the oldest entries. */
 export async function storeAudio(id: string, file: string, bytes: number): Promise<void> {
   await mkdir(CACHE_DIR, { recursive: true });
-  const target = cachedAudioPath(id);
+  // Keep the container extension: the content type the browser needs is
+  // derived from it.
+  const ext = path.extname(file).toLowerCase();
+  const target = CONTAINERS.includes(ext)
+    ? path.join(CACHE_DIR, `${id.replace(/[^A-Za-z0-9_-]/g, '')}${ext}`)
+    : cachedAudioPath(id);
   if (path.resolve(target) !== path.resolve(file)) {
-    await unlink(target).catch(() => undefined);
+    await copyFile(file, target);
+    await chmod(target, 0o600);
+  }
+  // Remove any other container left over for this id.
+  for (const other of candidatePaths(id)) {
+    if (path.resolve(other) !== path.resolve(target)) await unlink(other).catch(() => undefined);
   }
   const existing = entryFor(id);
-  if (existing) existing.touchedAt = Date.now();
+  if (existing) { existing.file = target; existing.bytes = bytes; existing.touchedAt = Date.now(); }
   else entries.push({ id, file: target, bytes, touchedAt: Date.now() });
   await evict();
 }
@@ -117,7 +171,7 @@ export async function serveCachedAudio(
     return true;
   }
   const headers: Record<string, string> = {
-    'Content-Type': 'audio/mpeg',
+    'Content-Type': audioContentType(cached.file) ?? 'audio/mpeg',
     'Content-Length': String(range.length),
     'Accept-Ranges': 'bytes',
     'Cache-Control': 'no-store',

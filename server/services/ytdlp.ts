@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { chmod, copyFile, mkdtemp, rm, stat } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, mkdtemp, readdir, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { platform, tmpdir } from 'node:os';
 import { z } from 'zod';
@@ -142,6 +142,31 @@ function errorReason(error: unknown): string {
   const stderrLines = typeof nodeError.stderr === 'string' ? nodeError.stderr.trim().split(/\r?\n/) : [];
   const stderr = stderrLines[stderrLines.length - 1] ?? '';
   return stderr?.slice(0, 200) || 'yt-dlp could not be started.';
+}
+
+/**
+ * Finds the audio file yt-dlp produced in the work directory.
+ *
+ * The output template only specifies a base name: yt-dlp appends the
+ * container extension, and post-processing may rewrite the file again.
+ * The largest file in the directory is the audio track.
+ */
+async function findProducedFile(workDir: string): Promise<string | undefined> {
+  let names: string[];
+  try {
+    names = await readdir(workDir);
+  } catch {
+    return undefined;
+  }
+  let best: { file: string; size: number } | undefined;
+  for (const name of names) {
+    if (name.endsWith('.part') || name.endsWith('.ytdl') || name.endsWith('.temp')) continue;
+    const file = path.join(workDir, name);
+    const info = await stat(file).catch(() => undefined);
+    if (!info || !info.isFile() || info.size === 0) continue;
+    if (!best || info.size > best.size) best = { file, size: info.size };
+  }
+  return best?.file;
 }
 
 export class YtDlpService implements AudioExtractor {
@@ -357,16 +382,24 @@ export class YtDlpService implements AudioExtractor {
         `https://www.youtube.com/watch?v=${id}`,
       ], DOWNLOAD_TIMEOUT_MS, signal);
 
-      const produced = stdout.trim().split(/\r?\n/).filter(Boolean).pop();
-      if (!produced) throw new Error('yt-dlp did not report a downloaded file.');
-      const info = await stat(produced).catch(() => undefined);
-      if (!info || info.size === 0) throw new Error('yt-dlp did not download an audio file.');
+      // yt-dlp appends the container extension to an output template, so the
+      // real file name is only known after the move. Reporting it with
+      // --print is unreliable: the printed path can point at a file that is
+      // not there (post-processed or renamed output). Read the work
+      // directory instead and take the largest file that was produced.
+      const produced = await findProducedFile(workDir);
+      if (!produced) throw new Error('yt-dlp did not download an audio file.');
+      const info = await stat(produced);
+      if (info.size === 0) throw new Error('yt-dlp did not download an audio file.');
 
       const target = cachedAudioPath(id);
-      await copyFile(produced, target);
-      await chmod(target, 0o600);
-      await storeAudio(id, target, info.size);
-      return { file: target, bytes: info.size };
+      // The cache directory has to exist before the file is copied into it.
+      // storeAudio() creates it, but that runs after the copy.
+      await mkdir(path.dirname(target), { recursive: true });
+      // storeAudio keeps the container extension, so the browser is served
+      // the content type that matches the actual audio.
+      await storeAudio(id, produced, info.size);
+      return { file: cachedAudioPath(id), bytes: info.size };
     } finally {
       await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
       if (cookieTempDir) await rm(cookieTempDir, { recursive: true, force: true }).catch(() => undefined);

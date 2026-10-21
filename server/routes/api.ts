@@ -12,7 +12,7 @@ import {
   normalizeSuggestions,
 } from '../normalizers.js';
 import { isAllowedMediaUrl, type AudioExtractor, type AudioQuality } from '../services/ytdlp.js';
-import { cachedAudio, serveCachedAudio } from '../services/audioCache.js';
+import { audioContentType, cachedAudio, serveCachedAudio } from '../services/audioCache.js';
 import { romanizeLyrics, LYRIC_LANGUAGES } from '../services/romanization.js';
 import { fetchLyrics } from '../services/lyrics.js';
 import { generateMusicIdea } from '../services/ai.js';
@@ -597,7 +597,9 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
       // A cached track is already on disk: send the file itself.
       const cached = await cachedAudio(id);
       if (cached) {
-        const contentType = (await audio.getAudioFormat(id, false, quality)).mimeType ?? 'audio/mpeg';
+        // The content type has to match the real container, otherwise the
+        // browser refuses to decode the file.
+        const contentType = audioContentType(cached.file) ?? (await audio.getAudioFormat(id, false, quality)).mimeType ?? 'audio/mpeg';
         const extension = downloadExtension(contentType);
         const name = safeDownloadName(title, artist, id);
         const asciiName = name.replace(/[^\x20-\x7e]/g, '').replace(/["\\]/g, '').trim() || id;
