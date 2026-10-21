@@ -25,9 +25,16 @@ export interface CreateAppOptions {
 
 function configureTrustProxy(app: Express): void {
   const configured = process.env.TRUST_PROXY?.trim();
-  if (!configured) return;
-  if (/^\d+$/.test(configured)) app.set('trust proxy', Number(configured));
-  else app.set('trust proxy', configured.split(',').map((value) => value.trim()).filter(Boolean));
+  if (configured) {
+    if (/^\d+$/.test(configured)) app.set('trust proxy', Number(configured));
+    else app.set('trust proxy', configured.split(',').map((value) => value.trim()).filter(Boolean));
+    return;
+  }
+  // Behind a proxy (cloudflared, Render) the client IP arrives in
+  // X-Forwarded-For. Without this, express-rate-limit refuses to
+  // identify the caller and every proxied request errors out, so the
+  // limiter silently stops working for the whole tunnel.
+  app.set('trust proxy', 1);
 }
 
 function contentSecurityPolicy(production: boolean): Parameters<typeof helmet>[0] {
