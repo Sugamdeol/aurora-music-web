@@ -10,11 +10,18 @@ import './player-polish.css';
 import './smooth-mode.css';
 import './player-reference.css';
 import './mobile.css';
+import './apple-music.css';
 
 declare global {
   interface Window {
     __glassPointer?: boolean;
   }
+}
+
+// Dev-only handle so the player state can be inspected and driven from the
+// console (visual QA, debugging playback without touching components).
+if (import.meta.env.DEV) {
+  (window as unknown as { __playbackStore?: unknown }).__playbackStore = usePlaybackStore;
 }
 
 const queryClient = new QueryClient({

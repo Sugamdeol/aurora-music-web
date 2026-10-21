@@ -149,7 +149,7 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   reduceMotion: false,
   compactRows: false,
   smoothMode: true,
-  accent: '#8aff18',
+  accent: '#fa233b',
 };
 
 export const DEFAULT_PLAYBACK_SETTINGS: PlaybackSettings = {

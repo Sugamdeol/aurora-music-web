@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
+import { AuroraLogo } from '../components/AuroraLogo';
 import type { MediaTrack } from '../domain/media';
 import { useLibraryStore } from '../store/library';
 import { usePlaybackStore } from '../store/playback';
@@ -75,7 +76,7 @@ export function AiPage() {
     <header className="ai-page-head"><div><span className="ai-kicker"><span className="ai-kicker-dot" /> YOUR MUSIC, YOUR WAY</span><h1>Aurora <em>Studio.</em></h1><p>Find the right song for right now.</p></div><div className="ai-main-tabs" role="group" aria-label="Aurora Studio tools"><button aria-pressed={panel === 'mix'} className={panel === 'mix' ? 'active' : ''} onClick={() => setPanel('mix')}><Icon name="disc" size={17} /> Mix maker</button><button aria-pressed={panel === 'agent'} className={panel === 'agent' ? 'active' : ''} onClick={() => setPanel('agent')}><Icon name="sparkles" size={17} /> Ask Aurora</button></div></header>
     {panel === 'agent' ? <AgentPanel /> : <>
     <div className="ai-stage">
-      <section className="ai-showcase" aria-labelledby="ai-showcase-title"><div className="ai-showcase-top"><span>THE LISTENING ROOM</span><Icon name="sparkles" size={17} /></div><div className="ai-record" aria-hidden="true"><div className="ai-record-label"><img src="/aurora.svg" alt="" /></div></div><div className="ai-showcase-copy"><span>CURATED BY YOU · POWERED BY CURIOSITY</span><h2 id="ai-showcase-title">A soundtrack for <em>every</em> version of you.</h2><p>One thought. A whole new world of songs.</p></div><span className="ai-showcase-index" aria-hidden="true">A / 01</span></section>
+      <section className="ai-showcase" aria-labelledby="ai-showcase-title"><div className="ai-showcase-top"><span>THE LISTENING ROOM</span><Icon name="sparkles" size={17} /></div><div className="ai-record" aria-hidden="true"><div className="ai-record-label"><AuroraLogo size={92} /></div></div><div className="ai-showcase-copy"><span>CURATED BY YOU · POWERED BY CURIOSITY</span><h2 id="ai-showcase-title">A soundtrack for <em>every</em> version of you.</h2><p>One thought. A whole new world of songs.</p></div><span className="ai-showcase-index" aria-hidden="true">A / 01</span></section>
       <form className="ai-form glass-surface" onSubmit={(event) => void generate(event)}>
         <div className="ai-form-heading"><span className="ai-form-mark"><Icon name="sparkles" size={19} /></span><div><span className="ai-kicker">THE MIX MAKER</span><h2>{mode === 'create' ? 'What are we feeling?' : mode === 'extend' ? 'Keep the feeling going.' : 'Let’s find something new.'}</h2><p>{mode === 'extend' ? 'Give an old favourite some new company.' : 'Describe a mood, moment, or artist.'}</p></div></div>
         <div className="ai-mode-row" role="group" aria-label="Mix type">{([['create', 'New mix'], ['extend', 'Add songs'], ['discover', 'Explore']] as const).map(([value, label]) => <button type="button" key={value} className={`ai-mode ${mode === value ? 'active' : ''}`} aria-pressed={mode === value} onClick={() => { setMode(value); setPreview(null); setError(''); }}><Icon name={value === 'create' ? 'plus' : value === 'extend' ? 'disc' : 'sparkles'} size={16} />{label}</button>)}</div>

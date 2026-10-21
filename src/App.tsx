@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/AppShell';
+import { AuroraLogo } from './components/AuroraLogo';
 import { Icon } from './components/Icon';
 import { RouteErrorBoundary } from './components/RouteErrorBoundary';
 import { getSetting, setSetting } from './lib/db';
@@ -62,7 +63,7 @@ export default function App() {
     });
   }, []);
 
-  if (booting) return <div className="app-boot"><img src="/aurora.svg" alt="" /><span className="boot-wave"><i /><i /><i /><i /></span><p>Opening your music</p></div>;
+  if (booting) return <div className="app-boot"><AuroraLogo size={72} /><span className="boot-wave"><i /><i /><i /><i /></span><p>Opening your music</p></div>;
   return <BrowserRouter>
     <RouteErrorBoundary>
       <Suspense fallback={<div className="route-loading" role="status">Opening your music…</div>}>
@@ -112,7 +113,7 @@ function StyleChoice({ showStyle, onComplete }: { showStyle: boolean; onComplete
     if (showStyle) { await useLibraryStore.getState().updateAppearance({ style }); await setSetting('onboarding.complete', true); }
     onComplete();
   };
-  return <div className="choice-scrim" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="choice-title" tabIndex={-1}><div className="choice-card glass-surface"><img src="/aurora.svg" alt="" /><span>Welcome to Aurora</span><h1 id="choice-title">{showStyle ? 'Make it yours.' : 'What should we call you?'}</h1><p>{showStyle ? 'Choose a name and how music feels. You can change these later.' : 'Your name appears in your profile and listening rooms.'}</p><label className="welcome-name"><span>Your name</span><input autoFocus value={name} maxLength={32} autoComplete="nickname" placeholder="Enter your name" onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void finish(); }} /></label>{showStyle && <div className="choice-options"><button className={style === 'glass' ? 'is-selected' : ''} onClick={() => setStyle('glass')}><span className="style-preview glass-preview"><i /><i /><i /></span><div><strong>Liquid Glass + Apple Music</strong><small>Soft depth, blur, and glowing lime</small></div>{style === 'glass' && <Icon name="check" />}</button><button className={style === 'material' ? 'is-selected' : ''} onClick={() => setStyle('material')}><span className="style-preview material-preview"><i /><i /><i /></span><div><strong>Material UI</strong><small>Clear surfaces and familiar controls</small></div>{style === 'material' && <Icon name="check" />}</button></div>}<button className="primary-button choice-continue" disabled={!name.trim()} onClick={() => void finish()}>Continue</button><small>A personal music space by Sugam Deol</small></div></div>;
+  return <div className="choice-scrim" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="choice-title" tabIndex={-1}><div className="choice-card glass-surface"><AuroraLogo size={64} /><span>Welcome to Aurora</span><h1 id="choice-title">{showStyle ? 'Make it yours.' : 'What should we call you?'}</h1><p>{showStyle ? 'Choose a name and how music feels. You can change these later.' : 'Your name appears in your profile and listening rooms.'}</p><label className="welcome-name"><span>Your name</span><input autoFocus value={name} maxLength={32} autoComplete="nickname" placeholder="Enter your name" onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void finish(); }} /></label>{showStyle && <div className="choice-options"><button className={style === 'glass' ? 'is-selected' : ''} onClick={() => setStyle('glass')}><span className="style-preview glass-preview"><i /><i /><i /></span><div><strong>Liquid Glass + Apple Music</strong><small>Soft depth, blur, and Apple Music red</small></div>{style === 'glass' && <Icon name="check" />}</button><button className={style === 'material' ? 'is-selected' : ''} onClick={() => setStyle('material')}><span className="style-preview material-preview"><i /><i /><i /></span><div><strong>Material UI</strong><small>Clear surfaces and familiar controls</small></div>{style === 'material' && <Icon name="check" />}</button></div>}<button className="primary-button choice-continue" disabled={!name.trim()} onClick={() => void finish()}>Continue</button><small>A personal music space by Sugam Deol</small></div></div>;
 }
 
 function NotFound() { return <div className="page not-found"><Icon name="disc" size={44} /><h1>This track goes nowhere.</h1><p>The page you opened is not part of this library.</p><a className="primary-button" href="/">Back home</a></div>; }

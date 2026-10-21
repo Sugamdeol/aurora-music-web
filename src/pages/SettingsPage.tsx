@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AppearanceSettings, CapabilitySnapshot, MediaTrack, PlaybackSettings } from '../domain/media';
 import { db, getSetting, setSetting, type HistoryRecord } from '../lib/db';
+import { AuroraLogo } from '../components/AuroraLogo';
 import { useLibraryStore } from '../store/library';
 import { PageHeader } from '../components/primitives';
 import { Icon } from '../components/Icon';
@@ -130,7 +131,7 @@ export function SettingsPage() {
   const storageText = storage ? `${(storage.usage / 1024 / 1024).toFixed(1)} MB used${storage.quota ? ` of ${(storage.quota / 1024 / 1024 / 1024).toFixed(1)} GB` : ''}` : 'Checking storage…';
   return <div className="page settings-page">
     <PageHeader title="Your Aurora" description="Tune the look, playback, and local data on this device." />
-    <section className="profile-card glass-surface"><span className="profile-avatar">{(profileName.trim()[0] || 'L').toUpperCase()}</span><div><label htmlFor="profile-name">Display name</label><input id="profile-name" name="displayName" autoComplete="nickname" value={profileName} maxLength={32} onChange={(event) => setProfileName(event.target.value)} onBlur={saveProfileName} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /><p>Used when you join a listening room.</p></div><img src="/aurora.svg" alt="Aurora Music" /></section>
+    <section className="profile-card glass-surface"><span className="profile-avatar">{(profileName.trim()[0] || 'L').toUpperCase()}</span><div><label htmlFor="profile-name">Display name</label><input id="profile-name" name="displayName" autoComplete="nickname" value={profileName} maxLength={32} onChange={(event) => setProfileName(event.target.value)} onBlur={saveProfileName} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /><p>Used when you join a listening room.</p></div><AuroraLogo size={56} /></section>
 
     <SettingsGroup title="Account and sync"><AccountSyncSettings /></SettingsGroup>
     <SettingsGroup title="Personalized suggestions"><YouTubeAccountSettings /></SettingsGroup>
@@ -164,7 +165,7 @@ export function SettingsPage() {
     </SettingsGroup>
 
     <SettingsGroup title="Browser capabilities"><div className="capability-grid">{Object.entries(caps).map(([key, enabled]) => <div key={key}><span className={enabled ? 'available' : ''}><Icon name={enabled ? 'check' : 'x'} size={14} /></span><strong>{capabilityLabels[key as keyof CapabilitySnapshot]}</strong><small>{enabled ? 'Available' : 'Not available'}</small></div>)}</div></SettingsGroup>
-    <section className="about-aurora"><img src="/aurora.svg" alt="" /><div><strong>Aurora Music</strong><span>Music floating inside dark glass.</span><small>Web client · by Sugam Deol</small></div></section>
+    <section className="about-aurora"><AuroraLogo size={56} /><div><strong>Aurora Music</strong><span>Music floating inside dark glass.</span><small>Web client · by Sugam Deol</small></div></section>
     {message && <div className="toast" role="status">{message}<button onClick={() => setMessage('')} aria-label="Dismiss"><Icon name="x" size={15} /></button></div>}
   </div>;
 }

@@ -8,6 +8,7 @@ import { usePlaybackStore } from '../store/playback';
 import { useRoomStore } from '../room/client';
 import { MediaCard, PlaylistCard, SongRow } from '../components/Media';
 import { HomeDiscovery } from '../components/HomeDiscovery';
+import { AuroraLogo } from '../components/AuroraLogo';
 import { Artwork, EmptyState, ErrorState, Section, Skeleton } from '../components/primitives';
 import { Icon } from '../components/Icon';
 import { db } from '../lib/db';
@@ -114,7 +115,7 @@ export function HomePage() {
     <div className="home-feature-grid">
       <section className="home-daily-mix glass-surface" aria-labelledby="daily-mix-heading">
         <div className="home-mix-copy"><span className="home-card-kicker"><Icon name="sparkles" size={14} />{name ? `Made for ${name}` : 'A little more you'}</span><h2 id="daily-mix-heading">Your<br />Daily Mix.</h2><p>{mix.length ? 'Favorites and fresh finds, woven together for today.' : 'Find a song or like a favorite. Your mix grows with your listening.'}</p><div className="home-mix-actions">{mix.length ? <><button className="primary-button" onClick={() => play(mix, 'Daily Mix')}><Icon name="play" size={17} /> Play mix</button>{saved?.id ? <Link className="secondary-button" to={`/playlist/local/${encodeURIComponent(saved.id)}`}>Open saved mix</Link> : <button className="secondary-button" disabled={saveState.busy} onClick={() => void saveMix()}><Icon name="plus" size={16} />{saveState.busy ? 'Saving…' : 'Save mix'}</button>}</> : <Link className="primary-button" to="/search">Discover music <Icon name="search" size={16} /></Link>}</div><small>{mix.length ? `${mix.length} songs · Refreshed daily` : 'Your music, at your own pace'}</small>{saved?.error && <p className="home-mix-error danger" role="alert">{saved.error}</p>}</div>
-        <div className="home-mix-art" aria-hidden="true">{mix.length ? Array.from({ length: 4 }, (_, index) => <Artwork key={index} src={mix[index % mix.length].artwork} title={mix[index % mix.length].title} />) : <div className="home-mix-symbol"><img src="/aurora.svg" alt="" /><span>AURORA / DAILY</span></div>}</div>
+        <div className="home-mix-art" aria-hidden="true">{mix.length ? Array.from({ length: 4 }, (_, index) => <Artwork key={index} src={mix[index % mix.length].artwork} title={mix[index % mix.length].title} />) : <div className="home-mix-symbol"><AuroraLogo size={54} /><span>AURORA / DAILY</span></div>}</div>
       </section>
       <CurrentSongCard recent={recent} />
     </div>

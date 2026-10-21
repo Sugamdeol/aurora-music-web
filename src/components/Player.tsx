@@ -10,6 +10,7 @@ import { Link } from 'react-router-dom';
 import { EqualizerControls } from './EqualizerControls';
 import { TrackActions } from './TrackActions';
 import { TrackLyrics } from './TrackLyrics';
+import { DockTransitionBadge, FullPlayerTransition, TransitionDivider } from './TransitionOverlay';
 import { useDialog } from '../hooks/useDialog';
 
 // Where the dock artwork sat when the full player was opened — the artwork
@@ -129,6 +130,7 @@ export function PlayerDock() {
     }
   };
   return <aside className="player-dock glass-surface" aria-label="Now playing">
+    <DockTransitionBadge />
     <button className="dock-track" onClick={() => { if (consumedSwipe.current) { consumedSwipe.current = false; return; } captureDockArtworkOrigin(); openFull(true); }} onPointerDown={(event) => { consumedSwipe.current = false; pointerStart.current = { x: event.clientX, y: event.clientY }; }} onPointerUp={gestureEnd} onPointerCancel={() => { pointerStart.current = null; }}>
       <Artwork src={track.artwork} title={track.title} />
       <span><strong><Marquee text={track.title} /></strong><small>{track.artist}</small></span>
@@ -164,6 +166,7 @@ function QueueSheet() {
   const clear = usePlaybackStore((state) => state.clearQueue);
   const clearUpcoming = usePlaybackStore((state) => state.clearUpcoming);
   const context = usePlaybackStore((state) => state.contextLabel);
+  const transitionMode = useLibraryStore((state) => state.playbackSettings.transitionMode);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState('My listening queue');
@@ -175,6 +178,13 @@ function QueueSheet() {
   const visibleQueue = queue.map((track, index) => ({ track, index })).filter(({ track }) => `${track.title} ${track.artist}`.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase()));
   const minutes = Math.round(upcoming.reduce((sum, track) => sum + (track.durationSeconds ?? 0), 0) / 60);
   const incompleteDuration = upcoming.some((track) => !track.durationSeconds);
+  // Auto Mix keeps consecutive tracks from one album gapless, so the
+  // transition marker only appears where a blend will actually happen.
+  const currentTrack = queue[currentIndex];
+  const nextTrackInQueue = queue[currentIndex + 1];
+  const showTransition = transitionMode === 'automix'
+    && Boolean(currentTrack && nextTrackInQueue)
+    && !(currentTrack?.album && currentTrack.album === nextTrackInQueue?.album && currentTrack.artist === nextTrackInQueue.artist);
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
     if (busy) return;
@@ -194,6 +204,7 @@ function QueueSheet() {
     {savedId && <p className="queue-save-message" role="status"><Icon name="check" size={16} /> Saved to your library. <Link to={`/playlist/local/${encodeURIComponent(savedId)}`} onClick={() => usePlaybackStore.getState().openSheet(null)}>Open playlist</Link></p>}
     {queue.length > 6 && <label className="queue-filter"><Icon name="search" size={17} /><input type="search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Find in queue" aria-label="Find in queue" /></label>}
     <div className="queue-list" aria-label="Queued tracks">{visibleQueue.map(({ track, index }) => <div key={`${track.id}-${index}`} className={`queue-item ${index === currentIndex ? 'is-current' : ''} ${index < currentIndex ? 'was-played' : ''}`} draggable={!filter} onDragStart={() => setDragIndex(index)} onDragEnd={() => setDragIndex(null)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (dragIndex !== null) reorder(dragIndex, index); setDragIndex(null); }}>
+      {showTransition && index === currentIndex + 1 && <TransitionDivider />}
       <span className="drag-handle" aria-hidden="true"><Icon name="drag" /></span><Artwork src={track.artwork} title={track.title} /><button type="button" className="plain-button" onClick={() => usePlaybackStore.getState().playTrack(track, queue, 'Queue', index)}><strong>{track.title}</strong><small>{track.recommended ? 'Suggested for you · ' : ''}{track.artist}</small></button><div className="queue-item-actions"><IconButton icon="chevron-right" label={`Move ${track.title} up`} className="queue-move queue-move-up" disabled={index === 0} onClick={() => reorder(index, index - 1)} /><IconButton icon="chevron-right" label={`Move ${track.title} down`} className="queue-move queue-move-down" disabled={index === queue.length - 1} onClick={() => reorder(index, index + 1)} /><IconButton icon="x" label={`Remove ${track.title} from queue`} onClick={() => remove(index)} /></div>
     </div>)}</div>
     {filter && !visibleQueue.length && <p className="sheet-empty">No songs match “{filter}”.</p>}
@@ -339,7 +350,7 @@ function FullPlayer() {
     <header className="full-player-top" {...swipeDown}><IconButton icon="x" label="Close full player" onClick={close} /><span>Playing from <strong>{context}</strong></span><div className="full-player-top-actions"><button className="player-focus-toggle" aria-label={focusMode ? 'Exit Focus' : 'Focus'} aria-pressed={focusMode} onClick={() => setFocusMode(!focusMode)}><Icon name="disc" size={16} /><span>{focusMode ? 'Exit Focus' : 'Focus'}</span></button><IconButton icon="fullscreen" label="Enter screen fullscreen" onClick={() => { setFocusMode(true); void dialogRef.current?.requestFullscreen?.().catch(() => undefined); }} />{!focusMode && <><IconButton icon="lyrics" label={lyricsVisible ? 'Hide lyrics' : 'Show lyrics'} active={lyricsVisible} onClick={() => { const next = !lyricsVisible; setLyricsVisible(next); void setSetting('player.lyrics.enabled', next); }} /><IconButton icon="queue" label="Open queue" onClick={() => openSheet('queue')} /></>}</div></header>
     <div className={`full-player-body ${lyricsVisible || focusMode ? '' : 'lyrics-hidden'}`}>
       <section className="full-player-media" aria-label="Playback controls">
-        <div className="full-artwork-wrap" ref={artworkWrapRef}><Artwork className="full-artwork" src={track.artwork} title={track.title} loading="eager" sizes="(max-width: 760px) 80vw, 440px" /></div>
+        <div className="full-artwork-wrap" ref={artworkWrapRef}><Artwork className="full-artwork" src={track.artwork} title={track.title} loading="eager" sizes="(max-width: 760px) 80vw, 440px" /><FullPlayerTransition /></div>
         <div className="full-track-copy"><div><h1><Marquee text={track.title} /></h1><p>{track.artist}{track.album ? <span>{track.album}</span> : null}</p></div><IconButton icon="heart" label={liked ? 'Unlike track' : 'Like track'} active={liked} onClick={() => void toggleLike(track)} /></div>
         <Progress />
         <PlaybackControls large />

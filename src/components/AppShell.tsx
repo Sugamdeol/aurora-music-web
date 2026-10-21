@@ -6,6 +6,7 @@ import { useRoomStore } from '../room/client';
 import { Icon, type IconName } from './Icon';
 import { IconButton } from './primitives';
 import { PlayerDock, PlayerOverlays } from './Player';
+import { AuroraLogo } from './AuroraLogo';
 import { useDialog } from '../hooks/useDialog';
 import { AdBanner } from './AdBanner';
 
@@ -85,7 +86,18 @@ export function AppShell() {
     document.documentElement.dataset.oled = String(appearance.oled);
     document.documentElement.dataset.compact = String(appearance.compactRows);
     document.documentElement.dataset.smooth = String(appearance.smoothMode);
-    document.documentElement.style.setProperty('--accent', appearance.accent);
+    // The old liquid-glass green was the shipped default. Existing installs
+    // still carry it in their saved settings, so it is treated as "default"
+    // and mapped onto the Apple Music red this design uses.
+    const accent = appearance.accent === '#8aff18' ? '#fa233b' : appearance.accent;
+    document.documentElement.style.setProperty('--accent', accent);
+    // Tint the favicon with the accent so the browser tab follows the
+    // theme too. A data URL keeps this free of extra requests.
+    const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (favicon) {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108"><path fill="#0b0d0b" d="M54,4 C82,4 104,26 104,54 C104,82 82,104 54,104 C26,104 4,82 4,54 C4,26 26,4 54,4 Z"/><path fill="none" d="M29,78 C39,63 48,44 55,25 C62,44 71,63 81,78" stroke="${accent.replace(/#/g, '%23')}" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><path fill="none" d="M39,76 L48,76 L54,68 L60,83 L67,72 L76,72" stroke="${accent.replace(/#/g, '%23')}" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" opacity=".55"/></svg>`;
+      favicon.href = `data:image/svg+xml,${svg}`;
+    }
     document.documentElement.classList.toggle('reduce-motion', appearance.reduceMotion);
   }, [appearance]);
 
@@ -151,7 +163,7 @@ export function AppShell() {
     <div className="song-ambient" aria-hidden="true" />
     <a className="skip-link" href="#main-content">Skip to content</a>
     <aside className="side-rail glass-surface">
-      <NavLink to="/" className="brand-lockup" aria-label="Aurora Music home"><img src="/aurora.svg" alt="" /><span><strong>Aurora</strong><small>by Sugam Deol</small></span></NavLink>
+      <NavLink to="/" className="brand-lockup" aria-label="Aurora Music home"><AuroraLogo size={40} /><span><strong>Aurora</strong><small>by Sugam Deol</small></span></NavLink>
       <nav className="desktop-nav" aria-label="Main navigation">{primaryNav.map((item) => <NavItem key={item.to} {...item} />)}</nav>
       <div className="rail-section">
         <div className="rail-heading"><span>Your playlists</span><button onClick={() => navigate('/library?create=1')} aria-label="Create playlist"><Icon name="plus" size={16} /></button></div>
@@ -164,7 +176,7 @@ export function AppShell() {
 
     <main className="main-stage" id="main-content" tabIndex={-1}>
       <header className="top-bar">
-        <NavLink to="/" className="mobile-brand"><img src="/aurora.svg" alt="" /><span>Aurora</span></NavLink>
+        <NavLink to="/" className="mobile-brand"><AuroraLogo size={40} /><span>Aurora</span></NavLink>
         <button className="search-shortcut" aria-label="Search songs, artists, albums" onClick={() => navigate('/search')}><Icon name="search" /><span>Search songs, artists, albums</span><kbd>Ctrl K</kbd></button>
         <IconButton icon={appearance.colorMode === 'dark' ? 'sun' : 'moon'} label={`Switch to ${appearance.colorMode === 'dark' ? 'light' : 'dark'} mode`} onClick={() => void useLibraryStore.getState().updateAppearance({ colorMode: appearance.colorMode === 'dark' ? 'light' : 'dark' })} />
         <IconButton icon="settings" label="Open settings" onClick={() => navigate('/settings')} />

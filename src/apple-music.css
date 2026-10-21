@@ -1,0 +1,574 @@
+/*
+ * Apple Music design language for Aurora.
+ *
+ * Loaded last so it overrides the liquid-glass theme. Covers the design
+ * tokens (SF type, Apple Music red, iOS surfaces), the mini player capsule,
+ * the full screen player, the tab bars, and the Auto Mix transition
+ * animation.
+ */
+
+:root {
+  --accent: #fa233b;
+  --accent-2: #fb5c74;
+  --accent-ink: #ffffff;
+  --accent-gradient: linear-gradient(135deg, #fa233b, #fb5c74);
+  --ink: #f5f5f7;
+  --muted: #98989d;
+  --quiet: #6e6e73;
+  --disabled: #48484a;
+  --bg: #0a0a0c;
+  --bg-deep: #000000;
+  --surface: #141416;
+  --surface-raised: #1c1c1e;
+  --surface-soft: rgba(255, 255, 255, 0.06);
+  --glass: rgba(22, 22, 24, 0.68);
+  --glass-strong: rgba(28, 28, 30, 0.84);
+  --line: rgba(255, 255, 255, 0.1);
+  --line-bright: rgba(255, 255, 255, 0.16);
+  --danger: #ff453a;
+  --radius-artwork: 10px;
+  --radius-card: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --ink: #1d1d1f;
+  --muted: #6e6e73;
+  --quiet: #8e8e93;
+  --disabled: #c7c7cc;
+  --bg: #ffffff;
+  --bg-deep: #f2f2f7;
+  --surface: #ffffff;
+  --surface-raised: #f2f2f7;
+  --surface-soft: rgba(0, 0, 0, 0.04);
+  --glass: rgba(255, 255, 255, 0.72);
+  --glass-strong: rgba(255, 255, 255, 0.86);
+  --line: rgba(0, 0, 0, 0.08);
+  --line-bright: rgba(0, 0, 0, 0.14);
+  --danger: #d70015;
+}
+
+/* ------------------------------------------------------------------ */
+/* Shell                                                              */
+/* ------------------------------------------------------------------ */
+
+body {
+  background: var(--bg);
+}
+
+body::before {
+  display: none;
+}
+
+.aurora-app {
+  letter-spacing: inherit;
+}
+
+h1, h2, h3 {
+  letter-spacing: -0.022em;
+}
+
+::selection {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(142, 142, 147, 0.32);
+  background-clip: padding-box;
+}
+
+.primary-button {
+  background: var(--accent-gradient);
+  color: #fff;
+  box-shadow: 0 6px 22px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.text-button {
+  color: var(--accent);
+}
+
+.glass-surface {
+  border: 1px solid var(--line);
+  background: var(--glass);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.34), inset 0 1px rgba(255, 255, 255, 0.07);
+}
+
+:root[data-theme='light'] .glass-surface {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1), inset 0 1px rgba(255, 255, 255, 0.85);
+}
+
+/* ------------------------------------------------------------------ */
+/* Desktop side rail — Apple Music's sidebar                          */
+/* ------------------------------------------------------------------ */
+
+.side-rail {
+  border-radius: 16px;
+  background: var(--glass);
+}
+
+.side-rail .brand-lockup strong {
+  letter-spacing: -0.02em;
+}
+
+.rail-heading span {
+  text-transform: none;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.desktop-nav .nav-link.is-active,
+.bottom-nav .nav-link.is-active {
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Bottom tab bar — iOS tab bar                                       */
+/* ------------------------------------------------------------------ */
+
+.bottom-nav {
+  border-radius: 18px 18px 0 0;
+  border-bottom: 0;
+  border-left: 0;
+  border-right: 0;
+  background: var(--glass-strong);
+  backdrop-filter: blur(30px) saturate(1.6);
+  -webkit-backdrop-filter: blur(30px) saturate(1.6);
+}
+
+.bottom-nav .nav-link {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.bottom-nav .nav-link svg {
+  width: 24px;
+  height: 24px;
+}
+
+.bottom-nav .nav-link.is-active {
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Mini player capsule                                                */
+/* ------------------------------------------------------------------ */
+
+.player-dock {
+  border-radius: 20px;
+  background: var(--glass-strong);
+  backdrop-filter: blur(34px) saturate(1.7);
+  -webkit-backdrop-filter: blur(34px) saturate(1.7);
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.44), inset 0 1px rgba(255, 255, 255, 0.09);
+}
+
+:root[data-theme='light'] .player-dock {
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.14), inset 0 1px rgba(255, 255, 255, 0.9);
+}
+
+.player-dock .artwork {
+  border-radius: calc(var(--radius-artwork) - 2px);
+}
+
+.player-dock .dock-track strong {
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.player-dock .dock-track small {
+  color: var(--muted);
+}
+
+.player-dock .main-play {
+  color: var(--accent);
+}
+
+.player-dock .playback-controls {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Full screen player                                                 */
+/* ------------------------------------------------------------------ */
+
+.reference-player {
+  background: #0c0c0e;
+}
+
+:root[data-theme='light'] .reference-player {
+  background: #fafafa;
+}
+
+.reference-player .player-ambient {
+  filter: blur(64px) saturate(1.9) brightness(0.52);
+  transform: scale(1.5);
+}
+
+:root[data-theme='light'] .reference-player .player-ambient {
+  filter: blur(70px) saturate(1.6) brightness(1.08);
+  opacity: 0.55;
+}
+
+/* A dark veil keeps text readable over bright artwork tints. */
+.reference-player::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.12) 30%, rgba(0, 0, 0, 0.55) 88%);
+}
+
+:root[data-theme='light'] .reference-player::after {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.16) 30%, rgba(255, 255, 255, 0.62) 88%);
+}
+
+.reference-player > * {
+  position: relative;
+  z-index: 1;
+}
+
+.full-player-top span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.full-player-top span strong {
+  color: var(--ink);
+}
+
+.full-artwork {
+  border-radius: 12px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+
+:root[data-theme='light'] .full-artwork {
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
+}
+
+/* Apple Music's player type: a huge tight title with the artist in the
+   accent red. These need the .reference-player prefix to out-rank the
+   older reference-player rules they replace. */
+.reference-player .full-track-copy h1 {
+  font-size: clamp(22px, 3vw, 28px);
+  font-weight: 800;
+  letter-spacing: -0.024em;
+}
+
+.reference-player .full-track-copy p,
+.reference-player .full-track-copy p span {
+  color: var(--accent);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.reference-player .full-track-copy p span {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* Scrubber: hairline track, Apple Music knob. */
+.dock-seek,
+.reference-player input[type='range'] {
+  accent-color: var(--accent);
+}
+
+.seek-track {
+  height: 4px;
+}
+
+.dock-seek::-webkit-slider-thumb,
+.reference-volume input::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+}
+
+/* Transport: plain white glyphs like Apple Music; the play control wears
+   the accent. */
+.reference-player .playback-controls .icon-button,
+.reference-player .playback-controls-large .icon-button {
+  color: var(--ink);
+  border: 0;
+  background: transparent;
+}
+
+.reference-player .playback-controls .icon-button:hover,
+.reference-player .playback-controls-large .icon-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+}
+
+:root[data-theme='light'] .reference-player .playback-controls .icon-button,
+:root[data-theme='light'] .reference-player .playback-controls-large .icon-button {
+  color: #1d1d1f;
+}
+
+:root[data-theme='light'] .reference-player .playback-controls .icon-button:hover,
+:root[data-theme='light'] .reference-player .playback-controls-large .icon-button:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #1d1d1f;
+}
+
+.reference-player .playback-controls .main-play {
+  color: var(--accent);
+}
+
+.reference-player .playback-controls .main-play:hover {
+  color: var(--accent-2);
+}
+
+/* ------------------------------------------------------------------ */
+/* Shelves and cards                                                  */
+/* ------------------------------------------------------------------ */
+
+.page-header h1,
+.section-header h2 {
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+.section-header h2 {
+  font-size: 22px;
+}
+
+.card,
+.chart-card,
+.room-card,
+.profile-card {
+  border-radius: var(--radius-card);
+}
+
+.artwork,
+.media-card .artwork {
+  border-radius: var(--radius-artwork);
+}
+
+.horizontal-shelf {
+  scrollbar-width: none;
+}
+
+.horizontal-shelf::-webkit-scrollbar {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Queue: the Apple Music "Transition" divider                         */
+/* ------------------------------------------------------------------ */
+
+.queue-item {
+  position: relative;
+}
+
+.queue-transition-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 2px 10px;
+  pointer-events: none;
+}
+
+.queue-transition-line {
+  flex: 1;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent-gradient, var(--accent));
+  opacity: 0.85;
+  animation: transition-shimmer 2.4s ease-in-out infinite;
+}
+
+@keyframes transition-shimmer {
+  0%, 100% { opacity: 0.5; filter: none; }
+  50% { opacity: 1; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 60%, transparent)); }
+}
+
+.queue-transition-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ */
+/* Auto Mix transition — the Apple Music blend animation               */
+/* ------------------------------------------------------------------ */
+
+/* Compact badge on the mini player capsule. */
+.dock-transition {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  translate: -50% 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 5px;
+  border-radius: 999px;
+  background: var(--glass-strong);
+  border: 1px solid var(--line-bright);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  z-index: 5;
+  animation: dock-transition-in 0.32s cubic-bezier(0.32, 0.72, 0.28, 1);
+}
+
+.dock-transition-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+@keyframes dock-transition-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.9); }
+  to { opacity: 1; transform: none; }
+}
+
+.transition-ring-track {
+  stroke: rgba(255, 255, 255, 0.22);
+}
+
+:root[data-theme='light'] .transition-ring-track {
+  stroke: rgba(0, 0, 0, 0.14);
+}
+
+.transition-ring-fill {
+  stroke: var(--accent);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 55%, transparent));
+}
+
+/* Full player overlay: both artworks blend with the audio's equal-power
+   curve, driven by --transition-progress (0..1). */
+.automix-overlay {
+  position: absolute;
+  inset: -6%;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.automix-artworks {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.automix-artwork {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+}
+
+.automix-artwork img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* The outgoing song recedes: grows slightly, dissolves, loses focus. */
+.automix-outgoing {
+  opacity: calc(1 - var(--transition-progress));
+  transform: scale(calc(1 + var(--transition-progress) * 0.14));
+  filter: blur(calc(var(--transition-progress) * 10px));
+}
+
+/* The incoming song arrives: rises, sharpens, settles at full size. */
+.automix-incoming {
+  opacity: calc(var(--transition-progress) * var(--transition-progress));
+  transform: scale(calc(0.88 + var(--transition-progress) * 0.12)) translateY(calc((1 - var(--transition-progress)) * 4%));
+}
+
+.automix-pill {
+  position: absolute;
+  bottom: -18px;
+  left: 50%;
+  translate: -50% 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 16px 7px 9px;
+  border-radius: 999px;
+  background: var(--glass-strong);
+  border: 1px solid var(--line-bright);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(22px) saturate(1.6);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.automix-pill span {
+  color: var(--ink);
+}
+
+.reduce-motion .automix-outgoing,
+.reduce-motion .automix-incoming {
+  transform: none;
+  filter: none;
+  transition: opacity 0.2s linear;
+}
+
+/* ------------------------------------------------------------------ */
+/* Lyrics panel                                                       */
+/* ------------------------------------------------------------------ */
+
+.full-player-lyrics h2 {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.full-player-lyrics header span {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* ------------------------------------------------------------------ */
+/* Sheets                                                             */
+/* ------------------------------------------------------------------ */
+
+.sheet-panel {
+  border-radius: 22px;
+  background: var(--glass-strong);
+  backdrop-filter: blur(34px) saturate(1.7);
+  -webkit-backdrop-filter: blur(34px) saturate(1.7);
+}
+
+.sheet-title h2 {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+/* ------------------------------------------------------------------ */
+/* Search and inputs                                                  */
+/* ------------------------------------------------------------------ */
+
+.search-field input,
+input[type='search'],
+input[type='text'],
+input[type='number'] {
+  caret-color: var(--accent);
+}
+
+.search-field:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}

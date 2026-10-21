@@ -435,6 +435,9 @@ export class PlaybackEngine {
     if (!seconds || remaining < .2 || prepared.audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) return;
     const outgoing = this.audio;
     const key = this.currentKey;
+    // Publish the blend for the Auto Mix transition UI before the store
+    // moves to the new track: the outgoing track reference is needed.
+    const outgoingTrack = state.currentTrack;
     this.startingMix = true;
     try {
       prepared.audio.playbackRate = state.playbackRate;
@@ -458,6 +461,7 @@ export class PlaybackEngine {
       this.pendingListenSeconds = 0;
       this.lastListenPosition = undefined;
       this.fading = { audio: outgoing, objectUrl: outgoingUrl, start: this.audio.currentTime, duration: Math.min(seconds, remaining) * state.playbackRate, outgoingGain: 1, incomingGain: 0, startedAt: performance.now() };
+      usePlaybackStore.getState().setTransition({ active: true, progress: 0, from: outgoingTrack ?? null, to: prepared.track });
       const latest = usePlaybackStore.getState();
       this.currentKey = `${prepared.track.id}:${latest.sourceRevision + 1}`;
       const history = latest.shuffle && latest.currentTrack ? [...latest.shuffleHistory, latest.currentTrack.id].slice(-100) : latest.shuffleHistory;
@@ -480,6 +484,8 @@ export class PlaybackEngine {
         const [outgoingGain, incomingGain] = mixGains(progress);
         fade.outgoingGain = outgoingGain;
         fade.incomingGain = incomingGain;
+        const currentTransition = usePlaybackStore.getState().transition;
+        usePlaybackStore.getState().setTransition({ ...currentTransition, active: true, progress: Math.min(1, progress) });
         const playback = usePlaybackStore.getState();
         this.setDeckVolume(fade.audio, playback.volume * outgoingGain);
         this.setDeckVolume(this.audio, playback.volume * incomingGain);
@@ -498,6 +504,8 @@ export class PlaybackEngine {
     this.fading = undefined;
     if (fade) this.releaseDeck(fade.audio, fade.objectUrl);
     this.setDeckVolume(this.audio, usePlaybackStore.getState().volume);
+    const transition = usePlaybackStore.getState().transition;
+    if (transition.active) usePlaybackStore.getState().setTransition({ active: false, progress: 0, from: null, to: null });
   }
 
   // Swap to the pre-buffered deck with no audible gap — used when transitions

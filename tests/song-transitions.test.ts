@@ -14,7 +14,7 @@ describe('transition planning', () => {
   it('keeps short clips and consecutive album songs intact in Auto Mix', () => {
     expect(transitionDuration(DEFAULT_PLAYBACK_SETTINGS, tracks[0], tracks[1], 8)).toBe(0);
     expect(transitionDuration(DEFAULT_PLAYBACK_SETTINGS, { ...tracks[0], album: 'Album' }, { ...tracks[1], album: 'Album' }, 200)).toBe(0);
-    expect(transitionDuration(DEFAULT_PLAYBACK_SETTINGS, tracks[0], tracks[1], 200)).toBe(5);
+    expect(transitionDuration(DEFAULT_PLAYBACK_SETTINGS, tracks[0], tracks[1], 200)).toBe(6);
   });
   it('bounds custom fade time and keeps equal power throughout the blend', () => {
     expect(transitionDuration({ ...DEFAULT_PLAYBACK_SETTINGS, transitionMode: 'crossfade', crossfadeSeconds: 100 }, tracks[0], tracks[1], 200)).toBe(12);

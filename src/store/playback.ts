@@ -43,6 +43,9 @@ interface PlaybackState {
   buffered: number;
   nextReady: boolean;
   setNextReady: (ready: boolean) => void;
+  /** Live Auto Mix blend: which songs are fading and how far along. */
+  transition: { active: boolean; progress: number; from: MediaTrack | null; to: MediaTrack | null };
+  setTransition: (transition: { active: boolean; progress: number; from: MediaTrack | null; to: MediaTrack | null }) => void;
   fullPlayerOpen: boolean;
   activeSheet: PlayerSheet;
   sourceRevision: number;
@@ -133,6 +136,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   buffered: 0,
   nextReady: false,
   setNextReady: (nextReady) => { if (get().nextReady !== nextReady) set({ nextReady }); },
+  transition: { active: false, progress: 0, from: null, to: null },
+  setTransition: (transition) => set({ transition }),
   fullPlayerOpen: false,
   activeSheet: null,
   sourceRevision: 0,

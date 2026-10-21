@@ -24,14 +24,16 @@ export interface TrackProfile {
   outroStart?: number;
 }
 
-const MIN_BLEND_SECONDS = 3;
+const MIN_BLEND_SECONDS = 4;
 const MIN_TRACK_SECONDS = 15;
 const SEARCH_WINDOW_SECONDS = 15;
 
 /** A blend is longer when the two songs are short, and never eats a quarter of either. */
 function blendLength(shorter: number, settings: PlaybackSettings): number {
+  // Apple Music's transitions sit around four to ten seconds: long enough
+  // to feel intentional, short enough not to smother either song.
   const base = settings.transitionMode === 'automix'
-    ? Math.max(MIN_BLEND_SECONDS, Math.min(9, shorter * 0.025))
+    ? Math.max(MIN_BLEND_SECONDS, Math.min(12, shorter * 0.03))
     : Math.max(1, Math.min(12, settings.crossfadeSeconds || 6));
   return Math.min(base, shorter / 4);
 }
