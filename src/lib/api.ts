@@ -307,3 +307,21 @@ export function streamCandidates(track: MediaTrack, quality: 'auto' | 'high' | '
   const candidates = track.streamUrl && track.streamUrl !== resolver ? [track.streamUrl, resolver] : [resolver];
   return track.source === 'local' ? [] : candidates;
 }
+
+/**
+ * Asks the server to fetch a track into its cache ahead of time.
+ *
+ * The server holds the track on disk, so the next song is already local by
+ * the time the player needs it. This is what removes the wait that used to
+ * sit between a song ending and the next one starting.
+ */
+export function prefetchTrack(track: MediaTrack, quality: 'auto' | 'high' | 'data-saver' = 'auto'): void {
+  if (track.source === 'local' || !track.id) return;
+  const id = encodeURIComponent(track.id);
+  const suffix = quality === 'auto' ? '' : `?quality=${encodeURIComponent(quality)}`;
+  const url = `/api/v1/prefetch/${id}${suffix}`;
+  // Fire immediately: the request itself is tiny, and the server does the
+  // download in the background. Delaying it would defeat the purpose, which
+  // is to have the next song ready long before it is needed.
+  void fetch(url, { method: 'GET', mode: 'cors', credentials: 'same-origin' }).catch(() => undefined);
+}

@@ -30,6 +30,16 @@ interface PlaybackState {
   repeat: RepeatMode;
   /** Track ids played under shuffle (session-only) so Previous walks what you actually heard. */
   shuffleHistory: string[];
+  /**
+   * The queue index the player has already preloaded under shuffle.
+   *
+   * Shuffle used to pick a random track twice: once when preloading the
+   * next song and again when the song ended, so the preload was frequently
+   * thrown away. The engine records its choice here and the store plays
+   * exactly that track.
+   */
+  shuffleNextIndex: number | null;
+  setShuffleNextIndex: (index: number | null) => void;
   buffered: number;
   nextReady: boolean;
   setNextReady: (ready: boolean) => void;
@@ -118,6 +128,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   shuffle: false,
   repeat: 'off',
   shuffleHistory: [],
+  shuffleNextIndex: null,
+  setShuffleNextIndex: (shuffleNextIndex) => { if (get().shuffleNextIndex !== shuffleNextIndex) set({ shuffleNextIndex }); },
   buffered: 0,
   nextReady: false,
   setNextReady: (nextReady) => { if (get().nextReady !== nextReady) set({ nextReady }); },
@@ -147,7 +159,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   playTracks: (tracks, startIndex = 0, contextLabel = 'Queue') => {
     if (!tracks.length) return;
     const current = updateCurrent([...tracks], startIndex);
-    set({ ...current, contextLabel, autoplayEligible: false, isPlaying: true, status: 'loading', error: undefined, position: 0, buffered: 0, shuffleHistory: [], duration: current.currentTrack?.durationSeconds ?? 0, sourceRevision: get().sourceRevision + 1 });
+    set({ ...current, contextLabel, autoplayEligible: false, isPlaying: true, status: 'loading', error: undefined, position: 0, buffered: 0, shuffleHistory: [], shuffleNextIndex: null, duration: current.currentTrack?.durationSeconds ?? 0, sourceRevision: get().sourceRevision + 1 });
     persist({ ...get(), ...current });
   },
 
@@ -197,7 +209,13 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     let index: number;
     let shuffleHistory = state.shuffleHistory;
     if (state.shuffle && state.queue.length > 1) {
-      do { index = Math.floor(Math.random() * state.queue.length); } while (index === state.currentIndex);
+      // The engine preloads the next song under shuffle. Play exactly that
+      // one, otherwise the preload and the fetch are thrown away.
+      if (state.shuffleNextIndex !== null && state.shuffleNextIndex >= 0 && state.shuffleNextIndex < state.queue.length && state.shuffleNextIndex !== state.currentIndex) {
+        index = state.shuffleNextIndex;
+      } else {
+        do { index = Math.floor(Math.random() * state.queue.length); } while (index === state.currentIndex);
+      }
       if (state.currentTrack) shuffleHistory = [...state.shuffleHistory, state.currentTrack.id].slice(-100);
     } else {
       index = state.currentIndex + 1;
@@ -208,7 +226,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     }
     if (!automatic && state.currentTrack && state.status === 'playing' && state.position >= 2 && state.position < 30 && state.position < (state.duration || 180) * .3) useRecommendationStore.getState().recordSkip(state.currentTrack.id);
     const current = updateCurrent(state.queue, index);
-    set({ ...current, isPlaying: true, status: 'loading', error: undefined, position: 0, duration: current.currentTrack?.durationSeconds ?? 0, sourceRevision: state.sourceRevision + 1, shuffleHistory, buffered: 0 });
+    set({ ...current, isPlaying: true, status: 'loading', error: undefined, position: 0, duration: current.currentTrack?.durationSeconds ?? 0, sourceRevision: state.sourceRevision + 1, shuffleHistory, shuffleNextIndex: null, buffered: 0 });
     persist({ ...state, ...current });
   },
 
@@ -247,7 +265,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   toggleMute: () => set((state) => ({ muted: !state.muted })),
   setBuffered: (seconds) => { if (Number.isFinite(seconds)) set({ buffered: seconds }); },
   // Shuffle history is per-session context; a fresh queue or toggle resets it.
-  toggleShuffle: () => { set((state) => ({ shuffle: !state.shuffle, shuffleHistory: [] })); persist(get()); },
+  toggleShuffle: () => { set((state) => ({ shuffle: !state.shuffle, shuffleHistory: [], shuffleNextIndex: null })); persist(get()); },
   setPlaybackRate: (rate) => {
     if (!Number.isFinite(rate)) return;
     const playbackRate = clamp(rate, .5, 2);
@@ -325,7 +343,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   },
   clearQueue: () => {
     const current = updateCurrent([], -1);
-    set({ ...current, autoplayEligible: false, isPlaying: false, status: 'idle', position: 0, duration: 0, buffered: 0, shuffleHistory: [], fullPlayerOpen: false, activeSheet: null, sourceRevision: get().sourceRevision + 1 });
+    set({ ...current, autoplayEligible: false, isPlaying: false, status: 'idle', position: 0, duration: 0, buffered: 0, shuffleHistory: [], shuffleNextIndex: null, fullPlayerOpen: false, activeSheet: null, sourceRevision: get().sourceRevision + 1 });
     persist({ ...get(), ...current });
   },
   retrySource: () => set((state) => ({ sourceRevision: state.sourceRevision + 1, isPlaying: true, status: 'loading', error: undefined })),

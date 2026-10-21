@@ -13,3 +13,8 @@ test-results/
 *.tsbuildinfo
 *.log
 screenshots/
+graphify-out/
+legion/
+tsconfig.api-check.json
+tsconfig.check.json
+tsconfig.client-check.json

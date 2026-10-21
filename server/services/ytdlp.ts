@@ -1,14 +1,16 @@
 import { execFile } from 'node:child_process';
-import { chmod, copyFile, mkdtemp, rm } from 'node:fs/promises';
+import { chmod, copyFile, mkdtemp, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { platform, tmpdir } from 'node:os';
 import { z } from 'zod';
 import type { AudioFormat, YtDlpStatus } from '../types.js';
 import { TaskQueue } from './taskQueue.js';
+import { cachedAudio, cachedAudioPath, storeAudio } from './audioCache.js';
 
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 const extractionQueue = new TaskQueue(1);
 const EXTRACTION_TIMEOUT_MS = 60_000;
+const DOWNLOAD_TIMEOUT_MS = 180_000;
 const STATUS_TTL_MS = 60_000;
 // Signed googlevideo URLs live for hours. Capping the cache at 3 minutes meant
 // nearly every play re-ran the slow yt-dlp extraction; 30 minutes keeps replay
@@ -43,6 +45,8 @@ interface ExecResult {
 export interface AudioExtractor {
   getAudioFormat(id: string, refresh?: boolean, quality?: AudioQuality, priority?: 'normal' | 'background'): Promise<AudioFormat>;
   warmAudioFormat?(id: string, quality?: AudioQuality): Promise<void>;
+  /** Downloads the track to the local audio cache so it can be served with range support. */
+  downloadAudio?(id: string, quality?: AudioQuality, signal?: AbortSignal): Promise<{ file: string; bytes: number }>;
   readiness(force?: boolean): Promise<YtDlpStatus>;
   invalidate(id: string): void;
 }
@@ -292,5 +296,80 @@ export class YtDlpService implements AudioExtractor {
     }
     this.formats.set(`${id}:${quality}`, { format, expiresAt: cacheExpiry(format.url) });
     return format;
+  }
+
+  /**
+   * Downloads a track into the local audio cache.
+   *
+   * The signed YouTube media URL is bound to the address that fetched it,
+   * so it cannot be handed to a browser or re-fetched later: it comes back
+   * 403. Downloading once on the server and serving the local file keeps
+   * playback, seeking and the next-song preload working.
+   */
+  async downloadAudio(id: string, quality: AudioQuality = 'auto', signal?: AbortSignal): Promise<{ file: string; bytes: number }> {
+    const existing = await cachedAudio(id);
+    if (existing) return existing;
+
+    const spec = commandSpec();
+    const cookieFile = process.env.YT_DLP_COOKIE_FILE?.trim();
+    let cookieTempDir: string | undefined;
+    let cookieArgs: string[] = [];
+    if (cookieFile) {
+      cookieTempDir = await mkdtemp(path.join(tmpdir(), 'aurora-ytdlp-'));
+      const writableCookieFile = path.join(cookieTempDir, 'cookies.txt');
+      try {
+        await copyFile(cookieFile, writableCookieFile);
+        await chmod(writableCookieFile, 0o600);
+        cookieArgs = ['--cookies', writableCookieFile];
+      } catch (error) {
+        await rm(cookieTempDir, { recursive: true, force: true });
+        throw error;
+      }
+    }
+
+    // yt-dlp appends the container extension to an output template, so the
+    // real file name is only known after the move. Ask for it explicitly.
+    const workDir = await mkdtemp(path.join(tmpdir(), 'aurora-dl-'));
+    const template = path.join(workDir, `${id.replace(/[^A-Za-z0-9_-]/g, '')}.%(ext)s`);
+    try {
+      const { stdout } = await run(spec.command, [
+        ...spec.prefix,
+        ...cookieArgs,
+        '--no-playlist',
+        '--force-ipv4',
+        '--socket-timeout',
+        '15',
+        '--retries',
+        '2',
+        '--extractor-retries',
+        '2',
+        '--js-runtimes',
+        process.env.YT_DLP_JS_RUNTIME?.trim() || `node:${process.execPath}`,
+        '--no-part',
+        '--no-mtime',
+        '--print',
+        'after_move:filepath',
+        '--output',
+        template,
+        '--format',
+        formatSelector(quality),
+        '--',
+        `https://www.youtube.com/watch?v=${id}`,
+      ], DOWNLOAD_TIMEOUT_MS, signal);
+
+      const produced = stdout.trim().split(/\r?\n/).filter(Boolean).pop();
+      if (!produced) throw new Error('yt-dlp did not report a downloaded file.');
+      const info = await stat(produced).catch(() => undefined);
+      if (!info || info.size === 0) throw new Error('yt-dlp did not download an audio file.');
+
+      const target = cachedAudioPath(id);
+      await copyFile(produced, target);
+      await chmod(target, 0o600);
+      await storeAudio(id, target, info.size);
+      return { file: target, bytes: info.size };
+    } finally {
+      await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
+      if (cookieTempDir) await rm(cookieTempDir, { recursive: true, force: true }).catch(() => undefined);
+    }
   }
 }

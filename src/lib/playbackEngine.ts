@@ -3,12 +3,13 @@ import { useRecommendationStore } from '../store/recommendations';
 import type { MediaTrack } from '../domain/media';
 import { formatDuration } from '../domain/media';
 import { db } from './db';
-import { api, streamCandidates } from './api';
+import { api, streamCandidates, prefetchTrack } from './api';
 import { useLibraryStore } from '../store/library';
 import { usePlaybackStore } from '../store/playback';
 import { EqualizerGraph } from './equalizer';
 import { useRoomStore } from '../room/client';
-import { mixGains, transitionDuration } from './songTransitions';
+import { mixGains, planTransition } from './songTransitions';
+import { estimateTempo, type EnergyProfile } from './trackAnalysis';
 import { DEFAULT_SPATIAL_AUDIO, normalizeSpatialAudioSettings, readSpatialAudioSettings, spatialMotionAtPhase, stereoWidthCoefficients, type SpatialAudioSettings } from './spatialAudio';
 
 type StoreState = ReturnType<typeof usePlaybackStore.getState>;
@@ -29,6 +30,8 @@ export class PlaybackEngine {
   private prepared?: PreparedDeck;
   private preparationKey = '';
   private preparationRevision = 0;
+  /** Measured energy shape per track, used to place Auto Mix blends. */
+  private profiles = new Map<string, EnergyProfile>();
   private failedPreparationKey = '';
   private prepareRetryAt = 0;
   private startingMix = false;
@@ -130,6 +133,7 @@ export class PlaybackEngine {
       if (track && this.handledTrackId !== track.id) {
         this.handledTrackId = track.id;
         this.lastListenPosition = this.audio.currentTime || 0;
+        this.analyseTrack(track, this.audio);
         void useLibraryStore.getState().recordPlay(track).then((id) => {
           if (store().currentTrack?.id === track.id) {
             this.historyRecordId = id;
@@ -350,9 +354,16 @@ export class PlaybackEngine {
     if (state.shuffle) {
       const choices = state.queue.map((_, i) => i).filter(i => i !== state.currentIndex);
       index = choices[Math.floor(Math.random() * choices.length)];
+      // Tell the store which track is being prepared so it plays exactly
+      // this one when the song ends, instead of shuffling again.
+      state.setShuffleNextIndex(index);
     } else if (index >= state.queue.length && state.repeat === 'all') index = 0;
     const track = state.queue[index];
     if (!track) return;
+    // Ask the server for the next track now, not when the current one is
+    // nearly over: the download happens on the server while the listener is
+    // still on the current song, so the handover is instant.
+    if (track.source === 'remote') prefetchTrack(track, settings.preferredQuality);
     const audio = new Audio();
     audio.preload = 'auto';
     audio.crossOrigin = 'anonymous';
@@ -399,9 +410,16 @@ export class PlaybackEngine {
     const state = usePlaybackStore.getState();
     const prepared = this.prepared;
     if (!prepared || this.startingMix || this.fading || !state.isPlaying || this.audio.paused || this.audio.seeking || state.repeat === 'one' || useRoomStore.getState().status === 'connected' || !state.currentTrack) return;
-    const seconds = transitionDuration(useLibraryStore.getState().playbackSettings, state.currentTrack, prepared.track, this.audio.duration);
-    const remaining = (this.audio.duration - this.audio.currentTime) / this.audio.playbackRate;
-    if (!seconds || remaining > seconds || remaining < .2 || prepared.audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) return;
+    const settings = useLibraryStore.getState().playbackSettings;
+    const plan = planTransition(settings, state.currentTrack, prepared.track, this.audio.duration, this.profileFor(state.currentTrack));
+    if (!plan) return;
+    // The blend starts at the planned musical point, not at the last second
+    // of the track: the transition is placed where the song breathes.
+    const remaining = (this.audio.duration - this.audio.currentTime) / state.playbackRate;
+    const untilPlan = (plan.startAt - this.audio.currentTime) / state.playbackRate;
+    if (untilPlan > 0) return;
+    const seconds = Math.min(plan.seconds, remaining);
+    if (!seconds || remaining < .2 || prepared.audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) return;
     const outgoing = this.audio;
     const key = this.currentKey;
     this.startingMix = true;
@@ -487,6 +505,87 @@ export class PlaybackEngine {
     const history = latest.shuffle && latest.currentTrack ? [...latest.shuffleHistory, latest.currentTrack.id].slice(-100) : latest.shuffleHistory;
     latest.playTracks(latest.queue, prepared.index, latest.contextLabel);
     usePlaybackStore.setState({ autoplayEligible: latest.autoplayEligible, shuffleHistory: history, nextReady: false });
+  }
+
+  /**
+   * Measures the energy shape of the track that is playing.
+   *
+   * The analyser is tapped on the deck's gain node, so the samples are the
+   * music itself. The envelope is stored per track and later used to place
+   * a blend where the song is quiet, which is what makes Auto Mix feel
+   * musical rather than mechanical.
+   */
+  private analyseTrack(track: MediaTrack, audio: HTMLAudioElement): void {
+    if (!this.audioContext || this.profiles.has(track.id)) return;
+    const gain = this.deckGains.get(audio);
+    if (!gain) return;
+    let analyser: AnalyserNode;
+    try {
+      analyser = this.audioContext.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.6;
+      gain.connect(analyser);
+    } catch {
+      return;
+    }
+    const buckets = 600;
+    const energy = new Float32Array(buckets);
+    const samples = new Uint8Array(analyser.fftSize);
+    let frame = 0;
+    const sampleRate = this.audioContext.sampleRate;
+    const perBucket = Math.max(1, Math.floor(sampleRate / buckets * 4));
+    let bucket = 0;
+    let count = 0;
+    let peak = 0;
+    const collect = (): void => {
+      if (bucket >= buckets) { this.finishProfile(track, energy, sampleRate, peak, analyser, gain); return; }
+      analyser.getByteTimeDomainData(samples);
+      let sum = 0;
+      for (let i = 0; i < samples.length; i += 1) {
+        const value = (samples[i] - 128) / 128;
+        sum += value * value;
+      }
+      const rms = Math.sqrt(sum / samples.length);
+      energy[bucket] = rms;
+      if (rms > peak) peak = rms;
+      bucket += 1;
+      frame += 1;
+      count += 1;
+      if (count >= perBucket) { count = 0; bucket += 1; }
+      requestAnimationFrame(collect);
+    };
+    requestAnimationFrame(collect);
+  }
+
+  private finishProfile(
+    track: MediaTrack,
+    energy: Float32Array,
+    sampleRate: number,
+    peak: number,
+    analyser: AnalyserNode,
+    gain: GainNode,
+  ): void {
+    try { gain.disconnect(analyser); } catch { /* already disconnected */ }
+    if (peak <= 0) return;
+    for (let i = 0; i < energy.length; i += 1) energy[i] /= peak;
+    const durationSeconds = track.durationSeconds ?? 0;
+    const measured: EnergyProfile = {
+      energy,
+      sampleRate: durationSeconds > 0 ? energy.length / durationSeconds : sampleRate,
+      durationSeconds,
+    };
+    const bpm = estimateTempo(energy, measured.sampleRate);
+    this.profiles.set(track.id, bpm ? { ...measured, bpm } : measured);
+  }
+
+  /**
+   * The measured shape of a track, used to place a blend musically.
+   * Falls back to an empty profile when the track has not been analysed.
+   */
+  private profileFor(track: MediaTrack): { energy?: Float32Array; bpm?: number } {
+    const profile = this.profiles.get(track.id);
+    if (!profile) return {};
+    return { energy: profile.energy, bpm: profile.bpm };
   }
 
   private reportBuffered(): void {

@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/AppShell';
 import { Icon } from './components/Icon';
+import { RouteErrorBoundary } from './components/RouteErrorBoundary';
 import { getSetting, setSetting } from './lib/db';
 import { usePlaybackEngine } from './hooks/usePlaybackEngine';
 import { useDialog } from './hooks/useDialog';
@@ -63,8 +64,9 @@ export default function App() {
 
   if (booting) return <div className="app-boot"><img src="/aurora.svg" alt="" /><span className="boot-wave"><i /><i /><i /><i /></span><p>Opening your music</p></div>;
   return <BrowserRouter>
-    <Suspense fallback={<div className="route-loading" role="status">Opening your music…</div>}>
-      <Routes>
+    <RouteErrorBoundary>
+      <Suspense fallback={<div className="route-loading" role="status">Opening your music…</div>}>
+        <Routes>
         <Route element={<AppShell />}>
           <Route index element={<HomePage />} />
           <Route path="search" element={<SearchPage />} />
@@ -86,7 +88,8 @@ export default function App() {
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
-    </Suspense>
+      </Suspense>
+    </RouteErrorBoundary>
     {showChoice && <StyleChoice showStyle={styleChoiceRequired} onComplete={() => setShowChoice(false)} />}
   </BrowserRouter>;
 }

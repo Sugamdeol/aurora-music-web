@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream';
-import { spawn, type ChildProcess } from 'node:child_process';
-import { Router, type RequestHandler } from 'express';
+import { createReadStream } from 'node:fs';
+import { Router, type RequestHandler, type Response as ExpressResponse } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { HttpError, asyncHandler, sendError, withTimeout } from '../errors.js';
 import {
@@ -11,7 +11,8 @@ import {
   normalizeSections,
   normalizeSuggestions,
 } from '../normalizers.js';
-import { isAllowedMediaUrl, commandSpec, formatSelector, type AudioExtractor, type AudioQuality } from '../services/ytdlp.js';
+import { isAllowedMediaUrl, type AudioExtractor, type AudioQuality } from '../services/ytdlp.js';
+import { cachedAudio, serveCachedAudio } from '../services/audioCache.js';
 import { romanizeLyrics, LYRIC_LANGUAGES } from '../services/romanization.js';
 import { fetchLyrics } from '../services/lyrics.js';
 import { generateMusicIdea } from '../services/ai.js';
@@ -134,42 +135,36 @@ function clientDisconnected(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
 }
 
-function streamYtDlp(id: string, quality: AudioQuality, signal: AbortSignal): NodeJS.ReadableStream {
-  const spec = commandSpec();
-  const cookieFile = process.env.YT_DLP_COOKIE_FILE?.trim();
-  const cookieArgs: string[] = cookieFile ? ['--cookies', cookieFile] : [];
+async function fetchMedia(url: string, headers: Headers, signal: AbortSignal): Promise<Response> {
+  let currentUrl = url;
+  for (let redirects = 0; redirects <= 3; redirects += 1) {
+    const response = await fetch(currentUrl, { headers, redirect: 'manual', signal });
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
 
-  const args = [
-    ...spec.prefix,
-    ...cookieArgs,
-    '--no-playlist',
-    '--force-ipv4',
-    '--socket-timeout', '10',
-    '--retries', '1',
-    '--extractor-retries', '1',
-    '--js-runtimes', process.env.YT_DLP_JS_RUNTIME?.trim() || `node:${process.execPath}`,
-    '--output', '-',
-    '--format', formatSelector(quality),
-    '--', `https://www.youtube.com/watch?v=${id}`,
-  ];
-
-  const child = spawn(spec.command, args, {
-    env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=160' },
-    signal,
-  });
-
-  child.stderr?.on('data', (chunk) => {
-    const text = chunk.toString();
-    if (/ERROR|FAIL|Unable to download/.test(text)) {
-      console.error('yt-dlp:', text.trim().slice(0, 300));
+    const location = response.headers.get('location');
+    await response.body?.cancel().catch(() => undefined);
+    if (!location) return response;
+    const nextUrl = new URL(location, currentUrl).href;
+    if (!isAllowedMediaUrl(nextUrl)) {
+      throw new HttpError(502, 'UPSTREAM_ERROR', 'The audio provider returned an unsafe redirect.');
     }
-  });
+    currentUrl = nextUrl;
+  }
+  throw new HttpError(502, 'UPSTREAM_ERROR', 'The audio provider returned too many redirects.');
+}
 
-  child.on('error', (error) => {
-    console.error('yt-dlp spawn error:', error.message);
+/** Serves a cached track from disk, with range support. False when nothing is cached. */
+async function serveFromCache(id: string, range: string | undefined, res: ExpressResponse): Promise<boolean> {
+  return serveCachedAudio(id, range, (status, headers) => {
+    res.status(status);
+    for (const [key, value] of Object.entries(headers)) res.setHeader(key, value);
+  }, (stream) => {
+    stream.on('error', (error) => {
+      if (!clientDisconnected(error)) console.error('Audio stream failed:', error.message);
+      if (!res.destroyed) res.destroy(error);
+    });
+    stream.pipe(res);
   });
-
-  return child.stdout!;
 }
 
 export function createApiRouter({ music, audio }: ApiDependencies): Router {
@@ -487,20 +482,59 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
     res.once('close', abort);
 
     try {
-      const format = await audio.getAudioFormat(id, false, quality);
-      const media = streamYtDlp(id, quality, disconnectController.signal);
+      // A cached track is served straight from disk with range support, so
+      // seeking works and the response starts instantly.
+      if (await serveFromCache(id, req.headers.range, res)) return;
 
-      res.status(200);
-      res.setHeader('Content-Type', format.mimeType || 'audio/mpeg');
+      // Otherwise download it once on the server: the signed media URL is
+      // bound to this address and cannot be handed to the browser.
+      if (audio.downloadAudio) {
+        await audio.downloadAudio(id, quality, disconnectController.signal);
+        if (await serveFromCache(id, req.headers.range, res)) return;
+      }
+
+      // Fallback: stream the signed URL directly.
+      const range = req.headers.range;
+      if (range) {
+        const result = rangeHeaderSchema.safeParse(range);
+        if (!result.success) throw new HttpError(416, 'BAD_REQUEST', 'Invalid Range header.');
+      }
+      let upstream: Response | undefined;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const format = await audio.getAudioFormat(id, attempt > 0, quality);
+        const headers = new Headers(format.httpHeaders);
+        if (range) headers.set('Range', range);
+        try {
+          upstream = await fetchMedia(format.url, headers, disconnectController.signal);
+        } catch (error) {
+          if (disconnectController.signal.aborted) throw error;
+          if (attempt === 0) { audio.invalidate(id); continue; }
+          throw error;
+        }
+        if (upstream.ok && upstream.body) break;
+        audio.invalidate(id);
+        await upstream.body?.cancel().catch(() => undefined);
+        if (attempt === 1) {
+          throw new HttpError(502, 'UPSTREAM_ERROR', `yt-dlp could not fetch this track (upstream ${upstream.status}). Try another song.`);
+        }
+      }
+      if (!upstream?.ok || !upstream.body) {
+        throw new HttpError(502, 'UPSTREAM_ERROR', 'yt-dlp did not return an audio stream.');
+      }
+
+      res.status(upstream.status);
+      for (const key of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified']) {
+        const value = upstream.headers.get(key);
+        if (value) res.setHeader(key, value);
+      }
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('Accept-Ranges', 'none');
-
-      media.pipe(res);
-      media.on('error', (error) => {
-        if (!clientDisconnected(error)) console.error('Audio stream failed:', error.message);
-        if (!res.destroyed) res.destroy(error);
-      });
+      Readable.fromWeb(upstream.body as never)
+        .on('error', (error) => {
+          if (!clientDisconnected(error)) console.error('Audio stream failed:', error.message);
+          if (!res.destroyed) res.destroy(error);
+        })
+        .pipe(res);
     } catch (error) {
       if (disconnectController.signal.aborted) return;
       if (error instanceof HttpError) throw error;
@@ -515,6 +549,33 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
       );
     } finally {
       req.off('aborted', abort);
+    }
+  }));
+
+  // Fetch a track into the server cache ahead of time so the next song is
+  // ready the moment the player asks for it. The client calls this as soon
+  // as a track starts, which is what makes an early transition possible.
+  router.get('/prefetch/:id', limiter(240, 15 * 60_000), asyncHandler(async (req, res) => {
+    const { id } = parseWith(trackParamsSchema, req.params);
+    const quality = requestedQuality(req.query.quality);
+    const cached = await cachedAudio(id);
+    if (cached) {
+      res.set('Cache-Control', 'no-store').status(204).end();
+      return;
+    }
+    if (!audio.downloadAudio) {
+      res.set('Cache-Control', 'no-store').status(204).end();
+      return;
+    }
+    const controller = new AbortController();
+    req.once('aborted', () => controller.abort());
+    try {
+      await audio.downloadAudio(id, quality, controller.signal);
+      res.set('Cache-Control', 'no-store').status(204).end();
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      console.error('Prefetch failed:', error instanceof Error ? error.message : String(error));
+      res.set('Cache-Control', 'no-store').status(204).end();
     }
   }));
 
@@ -533,25 +594,66 @@ export function createApiRouter({ music, audio }: ApiDependencies): Router {
     res.once('close', abort);
 
     try {
-      const format = await audio.getAudioFormat(id, false, quality);
-      const media = streamYtDlp(id, quality, disconnectController.signal);
+      // A cached track is already on disk: send the file itself.
+      const cached = await cachedAudio(id);
+      if (cached) {
+        const contentType = (await audio.getAudioFormat(id, false, quality)).mimeType ?? 'audio/mpeg';
+        const extension = downloadExtension(contentType);
+        const name = safeDownloadName(title, artist, id);
+        const asciiName = name.replace(/[^\x20-\x7e]/g, '').replace(/["\\]/g, '').trim() || id;
+        res.status(200);
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', `attachment; filename="${asciiName}${extension}"; filename*=UTF-8''${rfc5987(name)}${extension}`);
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Content-Length', String(cached.bytes));
+        createReadStream(cached.file).on('error', (error) => {
+          if (!clientDisconnected(error)) console.error('Audio download failed:', error.message);
+          if (!res.destroyed) res.destroy(error);
+        }).pipe(res);
+        return;
+      }
 
-      const contentType = format.mimeType ?? 'audio/mpeg';
+      // A stale signed URL is retried once with a fresh format.
+      let upstream: Response | undefined;
+      let contentType = 'audio/mpeg';
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const format = await audio.getAudioFormat(id, attempt > 0, quality);
+        contentType = format.mimeType ?? contentType;
+        try {
+          upstream = await fetchMedia(format.url, new Headers(format.httpHeaders), disconnectController.signal);
+        } catch (error) {
+          if (disconnectController.signal.aborted) throw error;
+          if (attempt === 0) { audio.invalidate(id); continue; }
+          throw error;
+        }
+        if (upstream.ok && upstream.body) break;
+        audio.invalidate(id);
+        await upstream.body?.cancel().catch(() => undefined);
+        if (attempt === 1) {
+          throw new HttpError(502, 'UPSTREAM_ERROR', `yt-dlp could not fetch this track (upstream ${upstream.status}). Try another song.`);
+        }
+      }
+      if (!upstream?.ok || !upstream.body) {
+        throw new HttpError(502, 'UPSTREAM_ERROR', 'yt-dlp did not return an audio stream.');
+      }
+
       const extension = downloadExtension(contentType);
       const name = safeDownloadName(title, artist, id);
       const asciiName = name.replace(/[^\x20-\x7e]/g, '').replace(/["\\]/g, '').trim() || id;
-
       res.status(200);
       res.setHeader('Content-Type', contentType);
       res.setHeader('Content-Disposition', `attachment; filename="${asciiName}${extension}"; filename*=UTF-8''${rfc5987(name)}${extension}`);
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('X-Content-Type-Options', 'nosniff');
-
-      media.pipe(res);
-      media.on('error', (error) => {
-        if (!clientDisconnected(error)) console.error('Audio download failed:', error.message);
-        if (!res.destroyed) res.destroy(error);
-      });
+      const contentLength = upstream.headers.get('content-length');
+      if (contentLength) res.setHeader('Content-Length', contentLength);
+      Readable.fromWeb(upstream.body as never)
+        .on('error', (error) => {
+          if (!clientDisconnected(error)) console.error('Audio download failed:', error.message);
+          if (!res.destroyed) res.destroy(error);
+        })
+        .pipe(res);
     } catch (error) {
       if (disconnectController.signal.aborted) return;
       if (error instanceof HttpError) throw error;
